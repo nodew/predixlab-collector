@@ -1,0 +1,43 @@
+name: Build and Push Docker Image to Azure Container Registry
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 🔹 登录到 ACR
+      - name: Log in to Azure Container Registry
+        uses: azure/docker-login@v1
+        with:
+          login-server: predixlab.azurecr.io
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      # 🔹 设置镜像标签
+      - name: Set image tag
+        id: set-tag
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            # 如果是版本标签推送，使用标签名作为镜像标签
+            echo "IMAGE_TAG=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          else
+            # 如果是分支推送（master），使用 latest 作为镜像标签
+            echo "IMAGE_TAG=latest" >> $GITHUB_OUTPUT
+          fi
+
+      # 🔹 构建并推送镜像
+      - name: Build and Push Docker image
+        run: |
+          IMAGE=predixlab.azurecr.io/qstock-collector:${{ steps.set-tag.outputs.IMAGE_TAG }}
+          docker build -t $IMAGE .
+          docker push $IMAGE
