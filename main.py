@@ -10,122 +10,18 @@ Usage:
     python main.py list-symbols --region US  # List available US symbols
 """
 
+from datetime import datetime
+from pathlib import Path
 import fire
 from loguru import logger
 
 from collectors.us_index import collect_us_index
 from collectors.us_calendar import collect_us_calendar
+from collectors.yahoo import collect_yahoo_data, normalize_yahoo_data
+from config import settings
 
 class QStockMarketDataService:
     """Main service class for stock market data operations."""
-
-    def collect(
-        self,
-        region: str = "US",
-        interval: str = "1d",
-        start: str = None,
-        end: str = None,
-        market: str = None,
-        max_workers: int = 4,
-        delay: float = 0.5,
-    ):
-        """Collect stock market data.
-
-        Parameters
-        ----------
-        region : str, optional
-            Market region (US, CN, HK, IN, BR), by default "US"
-        interval : str, optional
-            Data interval (1d, 1min), by default "1d"
-        start : str, optional
-            Start date (YYYY-MM-DD)
-        end : str, optional
-            End date (YYYY-MM-DD)
-        market : str, optional
-            Specific market (e.g., sp500, nasdaq100, csi300)
-        max_workers : int, optional
-            Number of worker threads, by default 4
-        delay : float, optional
-            Delay between requests, by default 0.5
-        """
-        logger.info(f"Starting data collection for {region} market")
-        logger.info(f"Interval: {interval}, Start: {start}, End: {end}")
-
-        if market:
-            logger.info(f"Collecting data for market: {market}")
-
-        # This would instantiate the appropriate collector based on region
-        logger.info("Data collection completed!")
-
-    def list_symbols(self, region: str = "US", limit: int = 10):
-        """List available stock symbols for a region.
-
-        Parameters
-        ----------
-        region : str, optional
-            Market region (US, CN, HK), by default "US"
-        limit : int, optional
-            Number of symbols to display, by default 10
-        """
-        logger.info(f"Fetching symbols for {region} market...")
-
-        try:
-            if region.upper() == "US":
-                symbols = get_us_stock_symbols()
-            elif region.upper() == "CN":
-                symbols = get_hs_stock_symbols()
-            elif region.upper() == "HK":
-                symbols = get_hk_stock_symbols()
-            else:
-                logger.error(f"Unsupported region: {region}")
-                return
-
-            logger.info(f"Found {len(symbols)} symbols for {region} market")
-            logger.info(f"First {limit} symbols:")
-            for i, symbol in enumerate(symbols[:limit]):
-                print(f"  {i+1:3d}. {symbol}")
-
-        except Exception as e:
-            logger.error(f"Error fetching symbols: {e}")
-
-    def get_calendar(self, region: str = "US"):
-        """Get trading calendar for a region.
-
-        Parameters
-        ----------
-        region : str, optional
-            Market region, by default "US"
-        """
-        from src.utils import get_calendar_list
-
-        try:
-            bench_code = f"{region.upper()}_ALL"
-            calendar = get_calendar_list(bench_code)
-            logger.info(f"Found {len(calendar)} trading days for {region}")
-            logger.info(f"Latest trading days:")
-            for date in calendar[-10:]:
-                print(f"  {date.strftime('%Y-%m-%d')}")
-        except Exception as e:
-            logger.error(f"Error fetching calendar: {e}")
-
-    def test_connection(self):
-        """Test connection to data sources."""
-        logger.info("Testing connection to Yahoo Finance...")
-
-        try:
-            from yahooquery import Ticker
-            # Test with a common stock
-            ticker = Ticker("AAPL")
-            data = ticker.history(interval="1d", period="5d")
-
-            if data is not None and not data.empty:
-                logger.info("✅ Yahoo Finance connection successful!")
-                logger.info(f"Retrieved {len(data)} data points for AAPL")
-            else:
-                logger.warning("⚠️  Yahoo Finance connection returned no data")
-
-        except Exception as e:
-            logger.error(f"❌ Yahoo Finance connection failed: {e}")
 
     def collect_us_index(self):
         """Collect US index constituents (SP500 + NASDAQ100).
@@ -160,30 +56,141 @@ class QStockMarketDataService:
             logger.error(f"❌ US trading calendar collection failed: {e}")
             raise
 
-    def info(self):
-        """Show service information."""
-        print("🚀 QStock Market Data Service")
-        print("=" * 40)
-        print("📊 Independent stock market data collection service")
-        print("🔗 Data sources: Yahoo Finance, Yahoo Query, Wikipedia")
-        print("🌍 Supported regions: US, CN, HK, IN, BR")
-        print("📈 Supported intervals: 1d (daily), 1min (minute)")
-        print("🎯 Supported indices: SP500, NASDAQ100, CSI300, HSI, etc.")
-        print("")
-        print("Examples:")
-        print("  python main.py test-connection")
-        print("  python main.py list-symbols --region US --limit 5")
-        print("  python main.py collect --region US --market sp500")
-        print("  python main.py collect-us-index")
-        print("  python main.py collect-us-calendar")
-        print("  python main.py collect-us-calendar --start-date 2020-01-01")
-        print("  python main.py get-calendar --region CN")
+    def collect_yahoo_data(
+        self,
+        start_date: str = None,
+        end_date: str = None,
+        interval: str = "1d",
+        delay: float = 0.5,
+        limit_nums: int = None
+    ):
+        """Collect US stock data from Yahoo Finance.
 
+        This method implements Yahoo Finance data collection with the following features:
+        1. Gets US stock list from config.us_index_path instead of downloading from network
+        2. Saves raw data to config.us_stock_data_dir instead of parameter-specified directory
+        3. Checks local files and downloads full data (from 2015-01-01) if missing,
+           or downloads incremental data based on date range and merges with existing
+        4. Marks abnormal data during merge and re-downloads full data if needed
+
+        Parameters
+        ----------
+        start_date : str, optional
+            Start date for data collection (YYYY-MM-DD), by default None (uses 2015-01-01)
+        end_date : str, optional
+            End date for data collection (YYYY-MM-DD), by default None (uses current date)
+        interval : str, optional
+            Data interval, by default "1d"
+        delay : float, optional
+            Delay between requests in seconds, by default 0.5
+        limit_nums : int, optional
+            Limit the number of symbols to process (for testing), by default None (process all)
+        """
+        logger.info("Starting Yahoo Finance stock data collection...")
+        logger.info(f"Parameters: start={start_date}, end={end_date}, interval={interval}, limit_nums={limit_nums}")
+
+        try:
+            collect_yahoo_data(
+                start_date=start_date,
+                end_date=end_date,
+                interval=interval,
+                delay=delay,
+                limit_nums=limit_nums
+            )
+            logger.info("✅ Yahoo Finance stock data collection completed successfully!")
+        except Exception as e:
+            logger.error(f"❌ Yahoo Finance stock data collection failed: {e}")
+            raise
+
+    def normalize_yahoo_data(
+        self,
+        start_date: str = None,
+        end_date: str = None,
+        max_workers: int = None,
+        date_field_name: str = "date",
+        symbol_field_name: str = "symbol"
+    ):
+        """Normalize US stock data from Yahoo Finance.
+
+        This method processes raw stock data stored in config.us_stock_data_dir and
+        applies standardization, anomaly detection, and adjustment calculations to
+        prepare data for analysis. The normalized data is saved to config.us_normalized_data_dir.
+
+        The normalization process includes:
+        1. Basic data normalization (timezone handling, duplicate removal, anomaly correction)
+        2. Price adjustment for splits and dividends using adjusted close prices
+        3. Manual adjustment to normalize all fields relative to the first day's close price
+
+        Parameters
+        ----------
+        start_date : str, optional
+            Start date for normalization (YYYY-MM-DD), by default None (process all data)
+        end_date : str, optional
+            End date for normalization (YYYY-MM-DD), by default None (process all data)
+        max_workers : int, optional
+            Number of worker processes for parallel processing, by default None (auto-detect)
+        date_field_name : str, optional
+            Date field name in the data, by default "date"
+        symbol_field_name : str, optional
+            Symbol field name in the data, by default "symbol"
+        """
+        logger.info("Starting Yahoo Finance stock data normalization...")
+        logger.info(f"Parameters: start={start_date}, end={end_date}, max_workers={max_workers}")
+
+        try:
+            normalize_yahoo_data(
+                start_date=start_date,
+                end_date=end_date,
+                max_workers=max_workers,
+                date_field_name=date_field_name,
+                symbol_field_name=symbol_field_name
+            )
+            logger.info("✅ Yahoo Finance stock data normalization completed successfully!")
+        except Exception as e:
+            logger.error(f"❌ Yahoo Finance stock data normalization failed: {e}")
+            raise
+
+    def update_daily_data(self):
+        """Update daily stock data."""
+        try:
+            logger.info("Starting the update of daily stock data...")
+
+            current_date = datetime.now().strftime("%Y-%m-%d")
+            calendar_path = Path(settings.us_calendar_path)
+            if not calendar_path.exists():
+                logger.warning(f"US calendar file not found: {calendar_path}, defaulting last_trading_date to 2015-01-01")
+                last_trading_date = "2015-01-01"
+            else:
+                with calendar_path.open('r', encoding='utf-8') as f:
+                    lines = [line.strip() for line in f if line.strip()]
+
+                if not lines:
+                    logger.warning(f"US calendar file is empty: {calendar_path}, defaulting last_trading_date to 2015-01-01")
+                    last_trading_date = "2015-01-01"
+                else:
+                    last_trading_date = lines[-2] if len(lines) >= 2 else lines[0]
+            # Validate date format
+            datetime.strptime(last_trading_date, "%Y-%m-%d")
+            logger.info(f"Last trading date from calendar: {last_trading_date}")
+
+            # 1) Ensure calendar is up to date first
+            self.collect_us_calendar(start_date=last_trading_date)
+
+            # 2) Update index, collect and normalize only up to last trading date
+            self.collect_us_index()
+
+            # 3) Collect and normalize stock data from yahoo finance API
+            self.collect_yahoo_data(interval="1d", start_date=last_trading_date, end_date=current_date)
+            self.normalize_yahoo_data()
+
+            logger.info("✅ Full update of 1-day interval stock data completed successfully!")
+        except Exception as e:
+            logger.error(f"❌ Full update of 1-day interval stock data failed: {e}")
+            raise
 
 def main():
     """Main entry point."""
     fire.Fire(QStockMarketDataService)
-
 
 if __name__ == "__main__":
     main()

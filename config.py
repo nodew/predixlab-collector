@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     us_stock_data_dir: str = "data/stock_data/us_data"
     cn_stock_data_dir: str = "data/stock_data/cn_data"
 
-    normalized_data_dir: str = "/data/normalized_data"
+    normalized_data_dir: str = "data/normalized_data"
     us_normalized_data_dir: str = "data/normalized_data/us_data"
     cn_normalized_data_dir: str = "data/normalized_data/cn_data"
 

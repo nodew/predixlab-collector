@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from loguru import logger
 from typing import List
+import time
 from yahooquery import Ticker
 
 from config import settings
@@ -32,55 +33,68 @@ class USCalendarCollector:
     def get_us_trading_dates(self) -> List[pd.Timestamp]:
         """Get US stock trading dates from start_date to current date using Yahoo Finance.
 
+        Uses retry mechanism with exponential backoff (max 3 retries) for yahooquery calls.
+
         Returns:
             List of trading dates as pandas Timestamps
         """
         logger.info(f"Fetching US trading calendar from {self.start_date} to {self.end_date}...")
 
-        try:
-            # Use Yahoo Finance to get historical data for S&P 500 index
-            ticker = Ticker(self.reference_symbol)
+        max_retries = 3
+        base_delay = 1.0  # Base delay in seconds
 
-            # Get historical data with maximum period to cover from start_date
-            hist_data = ticker.history(
-                interval="1d",
-                start=self.start_date,
-                end=self.end_date
-            )
+        for attempt in range(max_retries + 1):
+            try:
+                # Use Yahoo Finance to get historical data for S&P 500 index
+                ticker = Ticker(self.reference_symbol)
 
-            if hist_data is None or hist_data.empty:
-                raise ValueError(f"No data received for symbol {self.reference_symbol}")
+                # Get historical data with maximum period to cover from start_date
+                hist_data = ticker.history(
+                    interval="1d",
+                    start=self.start_date,
+                    end=self.end_date
+                )
 
-            # Extract trading dates from the index
-            if isinstance(hist_data.index, pd.MultiIndex):
-                # If MultiIndex (symbol, date), get level 1 (date)
-                trading_dates = hist_data.index.get_level_values(level="date").unique()
-            else:
-                # If single index (date)
-                trading_dates = hist_data.index
+                if hist_data is None or hist_data.empty:
+                    raise ValueError(f"No data received for symbol {self.reference_symbol}")
 
-            # Convert to list of pandas Timestamps and remove timezone info
-            trading_dates = [
-                pd.Timestamp(date.strftime("%Y-%m-%d")) if hasattr(date, 'strftime')
-                else pd.Timestamp(date) for date in trading_dates
-            ]
+                # Extract trading dates from the index
+                if isinstance(hist_data.index, pd.MultiIndex):
+                    # If MultiIndex (symbol, date), get level 1 (date)
+                    trading_dates = hist_data.index.get_level_values(level="date").unique()
+                else:
+                    # If single index (date)
+                    trading_dates = hist_data.index
 
-            # Sort the dates
-            trading_dates = sorted(trading_dates)
+                # Convert to list of pandas Timestamps and remove timezone info
+                trading_dates = [
+                    pd.Timestamp(date.strftime("%Y-%m-%d")) if hasattr(date, 'strftime')
+                    else pd.Timestamp(date) for date in trading_dates
+                ]
 
-            # Filter to ensure dates are within our specified range
-            start_ts = pd.Timestamp(self.start_date)
-            end_ts = pd.Timestamp(self.end_date)
-            trading_dates = [date for date in trading_dates if start_ts <= date <= end_ts]
+                # Sort the dates
+                trading_dates = sorted(trading_dates)
 
-            logger.info(f"Successfully fetched {len(trading_dates)} US trading dates")
-            logger.info(f"Date range: {trading_dates[0]} to {trading_dates[-1]}")
+                # Filter to ensure dates are within our specified range
+                start_ts = pd.Timestamp(self.start_date)
+                end_ts = pd.Timestamp(self.end_date)
+                trading_dates = [date for date in trading_dates if start_ts <= date <= end_ts]
 
-            return trading_dates
+                logger.info(f"Successfully fetched {len(trading_dates)} US trading dates")
+                logger.info(f"Date range: {trading_dates[0]} to {trading_dates[-1]}")
 
-        except Exception as e:
-            logger.error(f"Failed to fetch US trading calendar: {e}")
-            raise
+                return trading_dates
+
+            except Exception as e:
+                if attempt < max_retries:
+                    # Calculate delay with exponential backoff
+                    delay = base_delay * (2 ** attempt)
+                    logger.warning(f"Attempt {attempt + 1} failed to fetch US trading calendar: {e}")
+                    logger.info(f"Retrying in {delay:.1f} seconds... ({attempt + 1}/{max_retries})")
+                    time.sleep(delay)
+                else:
+                    logger.error(f"Failed to fetch US trading calendar after {max_retries + 1} attempts: {e}")
+                    raise
 
     def save_calendar(self, trading_dates: List[pd.Timestamp]) -> None:
         """Save trading dates to the configured calendar file using merge strategy.

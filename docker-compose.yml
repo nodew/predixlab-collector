@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  qstock-collector:
+    build: .
+    image: qstock-collector:latest
+    container_name: qstock-collector
+    restart: unless-stopped
+
+    # Mount data directories as volumes for persistence
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+
+    # Environment variables (override default settings if needed)
+    environment:
+      - PYTHONUNBUFFERED=1
+      # Uncomment and modify these to override default paths
+      # - US_STOCK_DATA_DIR=/app/data/stock_data/us_data
+      # - US_NORMALIZED_DATA_DIR=/app/data/normalized_data/us_data
+      # - US_CALENDAR_PATH=/app/data/calendar/us.txt
+      # - US_INDEX_PATH=/app/data/instruments/us.txt
+
+    # Network configuration (if needed for future web interface)
+    ports:
+      - "8000:8000"
+
+    # Override default command
+    # Uncomment one of the following commands or create your own:
+
+    # Show help (default)
+    command: ["python", "main.py", "--help"]
+
+    # Daily data update
+    # command: ["python", "main.py", "update_daily_data"]
+
+    # Collect specific data
+    # command: ["python", "main.py", "collect_yahoo_data", "--limit_nums", "10"]
+
+    # Keep container running for interactive use
+    # command: ["tail", "-f", "/dev/null"]
+
+  # Optional: Add a web interface or API service in the future
+  # qstock-api:
+  #   build: .
+  #   ports:
+  #     - "8080:8080"
+  #   volumes:
+  #     - ./data:/app/data:ro  # Read-only access to data
+  #   depends_on:
+  #     - qstock-collector
+  #   command: ["python", "api.py"]  # Future API server
+
+volumes:
+  # Named volumes for data persistence
+  qstock_data:
+    driver: local
+  qstock_logs:
+    driver: local
+
+networks:
+  default:
+    name: qstock-network
