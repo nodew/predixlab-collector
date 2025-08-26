@@ -35,7 +35,6 @@ class QStockMarketDataService:
             logger.info("✅ US index collection completed successfully!")
         except Exception as e:
             logger.error(f"❌ US index collection failed: {e}")
-            raise
 
     def collect_us_calendar(self, start_date: str = "2015-01-01"):
         """Collect US stock trading calendar dates.
