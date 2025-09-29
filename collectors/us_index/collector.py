@@ -24,6 +24,16 @@ class USIndexCollector:
         """Initialize the US index collector."""
         self.us_index_path = Path(settings.us_index_path)
         self.us_index_path.parent.mkdir(parents=True, exist_ok=True)
+        # Use a persistent session with a polite User-Agent and common headers
+        # to avoid being blocked by Wikipedia (403). Wikipedia may block
+        # requests that don't identify the client.
+        self.session = requests.Session()
+        self.session.headers.update({
+            # Use a realistic browser User-Agent to better mimic normal browser traffic
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        })
 
     def get_sp500_symbols_with_dates(self) -> pd.DataFrame:
         """Get current SP500 constituents with their addition dates from Wikipedia.
@@ -34,7 +44,7 @@ class USIndexCollector:
         logger.info("Fetching SP500 constituents with dates from Wikipedia...")
 
         try:
-            resp = requests.get(self.SP500_URL, timeout=30)
+            resp = self.session.get(self.SP500_URL, timeout=30)
             resp.raise_for_status()
 
             # Parse HTML tables
@@ -73,7 +83,7 @@ class USIndexCollector:
         logger.info("Fetching NASDAQ100 constituents from Wikipedia...")
 
         try:
-            resp = requests.get(self.NASDAQ100_URL, timeout=30)
+            resp = self.session.get(self.NASDAQ100_URL, timeout=30)
             resp.raise_for_status()
 
             # Parse HTML tables
