@@ -19,4 +19,6 @@ dependencies = [
     "yahooquery>=2.4.1",
     "python-dateutil>=2.8.2",
     "pydantic-settings>=2.10.1",
+    "pymongo>=4.10.1",
+    "azure-communication-email>=1.0.0",
 ]

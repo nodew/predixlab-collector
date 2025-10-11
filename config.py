@@ -17,6 +17,16 @@ class Settings(BaseSettings):
     us_normalized_data_dir: str = "data/normalized_data/us_data"
     cn_normalized_data_dir: str = "data/normalized_data/cn_data"
 
+    # MongoDB settings
+    mongodb_url: str = 'mongodb://localhost:27017'
+    database_name: str = 'predixlab'
+    jobs_collection: str = 'jobs'
+
+    # ACS email settings
+    acs_connection_string: str = ''
+    acs_sender_email: str = ''
+    acs_to_emails: str = ''  # Comma-separated list of recipient emails
+
     class Config:
         env_file = ".env"
 

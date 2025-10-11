@@ -10,18 +10,88 @@ Usage:
     python main.py list-symbols --region US  # List available US symbols
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Dict
 import fire
 from loguru import logger
+from pymongo import MongoClient
 
 from collectors.us_index import collect_us_index
 from collectors.us_calendar import collect_us_calendar
 from collectors.yahoo import collect_yahoo_data, normalize_yahoo_data
 from config import settings
+from notification import send_email_notification
 
 class QStockMarketDataService:
     """Main service class for stock market data operations."""
+
+    def _save_job_status_to_db(self, job_status: Dict[str, Any]) -> bool:
+        """
+        Save job execution status to MongoDB.
+
+        Args:
+            job_status: Dictionary containing job execution status and metadata
+
+        Returns:
+            bool: True if saved successfully, False otherwise
+        """
+        try:
+            client = MongoClient(settings.mongodb_url)
+            db = client[settings.database_name]
+            coll = db[settings.jobs_collection]
+
+            # Add timestamp if not present
+            if 'created_at' not in job_status:
+                job_status['created_at'] = datetime.now(timezone.utc)
+
+            # Insert job status document
+            result = coll.insert_one(job_status)
+            
+            logger.info(f"Job status saved to database. Document ID: {result.inserted_id}")
+            client.close()
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to save job status to database: {e}")
+            return False
+
+    def _post_job(self, job_status: Dict[str, Any]) -> None:
+        """
+        Execute post-job tasks: save job status to database and send email notification.
+
+        Args:
+            job_status: Dictionary containing job execution status and metadata
+                Expected keys:
+                    - job_name: Internal job identifier (stable, used for DB persistence / queries)
+                    - job_display_name: Human readable display name (used for notifications / UI)
+                    - status: 'success' or 'failed'
+                    - start_time: ISO format start time
+                    - end_time: ISO format end time
+                    - duration_seconds: Duration in seconds
+                    - results: Optional dict with execution results
+                    - error: Optional error message if failed
+        """
+        logger.info("Executing post-job tasks (DB save -> notification)")
+
+        # 1. Save job status to database first so notification reflects persisted state
+        db_saved = self._save_job_status_to_db(job_status)
+        if db_saved:
+            logger.info("Job status saved to database successfully")
+        else:
+            logger.warning("Job status was not saved to database")
+
+        # 2. Send email notification (include note if DB failed)
+        if not db_saved:
+            job_status.setdefault('warning', 'DB save failed prior to notification')
+
+        email_sent = send_email_notification(job_status)
+        if email_sent:
+            logger.info("Email notification sent successfully")
+        else:
+            logger.warning("Email notification was not sent")
+
+        logger.info("Post-job tasks completed")
 
     def collect_us_index(self):
         """Collect US index constituents (SP500 + NASDAQ100).
@@ -150,7 +220,16 @@ class QStockMarketDataService:
             raise
 
     def update_daily_data(self):
-        """Update daily stock data."""
+        """Update daily stock data with job status tracking and notifications."""
+        start_time = datetime.now()
+        job_status = {
+            'job_name': 'predixlab_marketdata_collector',  # machine-friendly identifier
+            'job_display_name': 'PredixLab Market Data Collector',  # human readable
+            'start_time': start_time.isoformat(),
+            'status': 'failed',  # Default to failed, will update on success
+            'results': {}
+        }
+
         try:
             logger.info("Starting the update of daily stock data...")
 
@@ -178,14 +257,39 @@ class QStockMarketDataService:
             # 2) Update index, collect and normalize only up to last trading date
             self.collect_us_index()
 
+            # Count symbols processed
+            index_path = Path(settings.us_index_path)
+            symbols_count = 0
+            if index_path.exists():
+                with index_path.open('r', encoding='utf-8') as f:
+                    symbols_count = sum(1 for line in f if line.strip())
+
             # 3) Collect and normalize stock data from yahoo finance API
             self.collect_yahoo_data(interval="1d", start_date=last_trading_date, end_date=current_date)
             self.normalize_yahoo_data()
 
             logger.info("✅ Full update of 1-day interval stock data completed successfully!")
+            
+            # Update job status with success
+            job_status['status'] = 'success'
+            job_status['results'] = {
+                'last_trading_date': last_trading_date,
+                'symbols_processed': symbols_count,
+                'data_collected': True,
+                'data_normalized': True
+            }
+
         except Exception as e:
             logger.error(f"❌ Full update of 1-day interval stock data failed: {e}")
+            job_status['error'] = str(e)
             raise
+        finally:
+            # Always execute post-job tasks
+            end_time = datetime.now()
+            job_status['end_time'] = end_time.isoformat()
+            job_status['duration_seconds'] = (end_time - start_time).total_seconds()
+
+            self._post_job(job_status)
 
 def main():
     """Main entry point."""

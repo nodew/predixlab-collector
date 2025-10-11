@@ -164,6 +164,16 @@ class Settings(BaseSettings):
     # 标准化数据
     normalized_data_dir: str = "data/normalized_data"
     us_normalized_data_dir: str = "data/normalized_data/us_data"
+
+    # MongoDB 设置
+    mongodb_url: str = 'mongodb://localhost:27017'
+    database_name: str = 'qstock'
+    jobs_collection: str = 'jobs'
+
+    # Azure Communication Service 邮件设置
+    acs_connection_string: str = ''
+    acs_sender_email: str = ''
+    acs_to_emails: str = ''  # 逗号分隔的收件人邮箱列表
 ```
 
 ### 环境变量 (.env)
@@ -173,6 +183,58 @@ class Settings(BaseSettings):
 # 覆盖默认配置路径
 US_STOCK_DATA_DIR=custom/path/to/stock/data
 US_NORMALIZED_DATA_DIR=custom/path/to/normalized/data
+
+# MongoDB 配置
+MONGODB_URL=mongodb://localhost:27017
+DATABASE_NAME=qstock
+JOBS_COLLECTION=jobs
+
+# Azure Communication Service 邮件配置
+ACS_CONNECTION_STRING=endpoint=https://your-acs-resource.communication.azure.com/;accesskey=your-access-key
+ACS_SENDER_EMAIL=DoNotReply@your-domain.com
+ACS_TO_EMAILS=user1@example.com,user2@example.com
+```
+
+## 📧 通知功能
+
+### 任务状态通知
+系统支持通过 Azure Communication Service (ACS) 发送任务执行状态通知邮件。
+
+#### 配置步骤
+1. 在 Azure 门户创建 Communication Service 资源
+2. 配置发件人邮箱域名和验证
+3. 获取连接字符串并配置到 `.env` 文件
+4. 设置收件人邮箱列表
+
+#### 通知内容
+- 任务名称和状态（成功/失败）
+- 开始时间、结束时间和执行时长
+- 处理的股票数量和其他执行结果
+- 错误信息（如果任务失败）
+
+#### 数据库记录
+任务状态会自动保存到 MongoDB 数据库中，包括：
+- 任务执行记录
+- 时间戳和执行时长
+- 详细的执行结果
+- 错误信息和警告
+
+### 示例邮件内容
+```
+✅ QStock Daily Data Update - Success
+
+Job Details
+Job: QStock Daily Data Update (qstock_collector_daily_update)
+Status: SUCCESS
+Start Time: 2025-01-11T15:00:00
+End Time: 2025-01-11T15:30:00
+Duration: 30m 15s
+
+Execution Results:
+Last Trading Date: 2025-01-10
+Symbols Processed: 603
+Data Collected: True
+Data Normalized: True
 ```
 
 ## 💡 高级功能
