@@ -22,7 +22,7 @@ class USIndexCollector:
 
     def __init__(self):
         """Initialize the US index collector."""
-        self.us_index_path = Path(settings.us_index_path)
+        self.us_index_path = Path(settings.us_index_path).expanduser()
         self.us_index_path.parent.mkdir(parents=True, exist_ok=True)
         # Use a persistent session with a polite User-Agent and common headers
         # to avoid being blocked by Wikipedia (403). Wikipedia may block

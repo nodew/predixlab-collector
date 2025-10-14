@@ -106,7 +106,7 @@ class QStockMarketDataService:
         except Exception as e:
             logger.error(f"❌ US index collection failed: {e}")
 
-    def collect_us_calendar(self, start_date: str = "2015-01-01"):
+    def collect_us_calendar(self, start_date: str = "2015-01-01", interval: str = "1d"):
         """Collect US stock trading calendar dates.
 
         This method fetches US stock trading calendar dates from start_date to current date
@@ -116,10 +116,12 @@ class QStockMarketDataService:
         ----------
         start_date : str, optional
             Start date for collecting calendar data, by default "2015-01-01"
+        interval : str, optional
+            Data interval, by default "1d". Supported values: "1d", "1wk", "1mo"
         """
         logger.info("Starting US trading calendar collection...")
         try:
-            collect_us_calendar(start_date=start_date)
+            collect_us_calendar(start_date=start_date, interval=interval)
             logger.info("✅ US trading calendar collection completed successfully!")
         except Exception as e:
             logger.error(f"❌ US trading calendar collection failed: {e}")
@@ -219,12 +221,18 @@ class QStockMarketDataService:
             logger.error(f"❌ Yahoo Finance stock data normalization failed: {e}")
             raise
 
-    def update_daily_data(self):
-        """Update daily stock data with job status tracking and notifications."""
+    def update_daily_data(self, no_upload: bool = False):
+        """Update daily stock data with job status tracking and notifications.
+
+        Parameters
+        ----------
+        no_upload : bool, optional
+            If True, skip uploading job status to database and sending email notifications, by default False
+        """
         start_time = datetime.now()
         job_status = {
-            'job_name': 'predixlab_marketdata_collector',  # machine-friendly identifier
-            'job_display_name': 'PredixLab Market Data Collector',  # human readable
+            'job_name': 'predixlab_daily_marketdata_collector',  # machine-friendly identifier
+            'job_display_name': 'PredixLab Daily Market Data Collector',  # human readable
             'start_time': start_time.isoformat(),
             'status': 'failed',  # Default to failed, will update on success
             'results': {}
@@ -234,7 +242,7 @@ class QStockMarketDataService:
             logger.info("Starting the update of daily stock data...")
 
             current_date = datetime.now().strftime("%Y-%m-%d")
-            calendar_path = Path(settings.us_calendar_path)
+            calendar_path = Path(settings.us_calendar_path).expanduser()
             if not calendar_path.exists():
                 logger.warning(f"US calendar file not found: {calendar_path}, defaulting last_trading_date to 2015-01-01")
                 last_trading_date = "2015-01-01"
@@ -252,13 +260,13 @@ class QStockMarketDataService:
             logger.info(f"Last trading date from calendar: {last_trading_date}")
 
             # 1) Ensure calendar is up to date first
-            self.collect_us_calendar(start_date=last_trading_date)
+            self.collect_us_calendar(start_date=last_trading_date, interval="1d")
 
             # 2) Update index, collect and normalize only up to last trading date
             self.collect_us_index()
 
             # Count symbols processed
-            index_path = Path(settings.us_index_path)
+            index_path = Path(settings.us_index_path).expanduser()
             symbols_count = 0
             if index_path.exists():
                 with index_path.open('r', encoding='utf-8') as f:
@@ -284,12 +292,113 @@ class QStockMarketDataService:
             job_status['error'] = str(e)
             raise
         finally:
-            # Always execute post-job tasks
+            # Execute post-job tasks unless no_upload is specified
             end_time = datetime.now()
             job_status['end_time'] = end_time.isoformat()
             job_status['duration_seconds'] = (end_time - start_time).total_seconds()
 
-            self._post_job(job_status)
+            if no_upload:
+                logger.info("Skipping post-job tasks (no_upload=True)")
+            else:
+                self._post_job(job_status)
+
+    def update_weekly_data(self, no_upload: bool = False):
+        """Update weekly stock data with job status tracking and notifications.
+
+        Parameters
+        ----------
+        no_upload : bool, optional
+            If True, skip uploading job status to database and sending email notifications, by default False
+        """
+        start_time = datetime.now()
+        job_status = {
+            'job_name': 'predixlab_weekly_marketdata_collector',  # machine-friendly identifier
+            'job_display_name': 'PredixLab Weekly Market Data Collector',  # human readable
+            'start_time': start_time.isoformat(),
+            'status': 'failed',  # Default to failed, will update on success
+            'results': {}
+        }
+
+        try:
+            logger.info("Starting the update of weekly stock data...")
+
+            current_date = datetime.now().strftime("%Y-%m-%d")
+            calendar_path = Path(settings.us_weekly_calendar_path).expanduser()
+            if not calendar_path.exists():
+                logger.warning(f"US weekly calendar file not found: {calendar_path}, defaulting last_trading_date to 2008-01-01")
+                last_trading_date = "2008-01-01"
+            else:
+                with calendar_path.open('r', encoding='utf-8') as f:
+                    lines = [line.strip() for line in f if line.strip()]
+
+                if not lines:
+                    logger.warning(f"US weekly calendar file is empty: {calendar_path}, defaulting last_trading_date to 2008-01-01")
+                    last_trading_date = "2008-01-01"
+                else:
+                    last_trading_date = lines[-2] if len(lines) >= 2 else lines[0]
+            # Validate date format
+            datetime.strptime(last_trading_date, "%Y-%m-%d")
+            logger.info(f"Last trading date from weekly calendar: {last_trading_date}")
+
+            # 1) Ensure calendar is up to date first
+            self.collect_us_calendar(start_date=last_trading_date, interval="1wk")
+
+            # Count symbols processed
+            index_path = Path(settings.us_index_path).expanduser()
+            symbols_count = 0
+            if index_path.exists():
+                with index_path.open('r', encoding='utf-8') as f:
+                    symbols_count = sum(1 for line in f if line.strip())
+
+            # 3) Collect and normalize weekly stock data from Yahoo Finance API
+            logger.info("Collecting weekly data...")
+            from collectors.yahoo import YahooCollector, YahooNormalizer
+            
+            # Collect weekly data
+            collector = YahooCollector(
+                start_date=last_trading_date,
+                end_date=current_date,
+                interval="1wk",
+                delay=0.5,
+                limit_nums=None
+            )
+            collector.collect()
+
+            # Normalize weekly data
+            logger.info("Normalizing weekly data...")
+            normalizer = YahooNormalizer(
+                start_date=None,
+                end_date=None,
+                interval="1wk"
+            )
+            normalizer.normalize()
+
+            logger.info("✅ Full update of weekly stock data completed successfully!")
+            
+            # Update job status with success
+            job_status['status'] = 'success'
+            job_status['results'] = {
+                'last_trading_date': last_trading_date,
+                'symbols_processed': symbols_count,
+                'data_collected': True,
+                'data_normalized': True,
+                'interval': '1wk'
+            }
+
+        except Exception as e:
+            logger.error(f"❌ Full update of weekly stock data failed: {e}")
+            job_status['error'] = str(e)
+            raise
+        finally:
+            # Execute post-job tasks unless no_upload is specified
+            end_time = datetime.now()
+            job_status['end_time'] = end_time.isoformat()
+            job_status['duration_seconds'] = (end_time - start_time).total_seconds()
+
+            if no_upload:
+                logger.info("Skipping post-job tasks (no_upload=True)")
+            else:
+                self._post_job(job_status)
 
 def main():
     """Main entry point."""

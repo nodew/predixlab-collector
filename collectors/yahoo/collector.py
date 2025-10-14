@@ -23,6 +23,7 @@ class YahooCollector:
 
     # Constants
     DEFAULT_START_DATE = "2015-01-01"
+    DEFAULT_WEEKLY_START_DATE = "2008-01-01"
     ABNORMAL_CHANGE_THRESHOLD = 0.5  # 50% change threshold for abnormal data detection
     RETRY_COUNT = 3
     DELAY_BETWEEN_REQUESTS = 0.5
@@ -33,7 +34,8 @@ class YahooCollector:
         end_date: Optional[str] = None,
         interval: str = "1d",
         delay: float = 0.5,
-        limit_nums: Optional[int] = None
+        limit_nums: Optional[int] = None,
+        data_dir: Optional[str] = None
     ):
         """Initialize Yahoo Finance collector.
 
@@ -44,21 +46,37 @@ class YahooCollector:
         end_date : Optional[str]
             End date for data collection (YYYY-MM-DD)
         interval : str
-            Data interval, default "1d"
+            Data interval, default "1d" (supports "1d", "1wk", etc.)
         delay : float
             Delay between requests in seconds, default 0.5
         limit_nums : Optional[int]
             Limit the number of symbols to process (for testing), default None (process all)
+        data_dir : Optional[str]
+            Custom data directory path, default None (uses config based on interval)
         """
-        self.start_date = start_date or self.DEFAULT_START_DATE
+        # Set default start date based on interval
+        if start_date:
+            self.start_date = start_date
+        elif interval == "1wk":
+            self.start_date = self.DEFAULT_WEEKLY_START_DATE
+        else:
+            self.start_date = self.DEFAULT_START_DATE
+        
         self.end_date = end_date or datetime.now().strftime("%Y-%m-%d")
         self.interval = interval
         self.delay = delay
         self.limit_nums = limit_nums
 
         # Get paths from config
-        self.us_index_path = Path(settings.us_index_path)
-        self.us_stock_data_dir = Path(settings.us_stock_data_dir)
+        self.us_index_path = Path(settings.us_index_path).expanduser()
+        
+        # Determine data directory based on interval or custom path
+        if data_dir:
+            self.us_stock_data_dir = Path(data_dir).expanduser()
+        elif interval == "1wk":
+            self.us_stock_data_dir = Path(settings.us_stock_weekly_data_dir).expanduser()
+        else:
+            self.us_stock_data_dir = Path(settings.us_stock_data_dir).expanduser()
 
         # Ensure data directory exists
         self.us_stock_data_dir.mkdir(parents=True, exist_ok=True)
@@ -317,8 +335,13 @@ class YahooCollector:
             if 'symbol' not in df.columns:
                 df['symbol'] = symbol
 
+            # Clean up data with datetime.datetime, for example: 2025-07-13 09:30:00-04:00
+            if (self.interval == "1d" or self.interval == "1wk") and ('date' in df.columns):
+                df["date"] = df["date"].map(lambda x: pd.Timestamp(x).date() if isinstance(x, pd.Timestamp) else pd.to_datetime(x).date())
+
             # Sort by date and save
             df_sorted = df.sort_values('date').reset_index(drop=True)
+
             df_sorted.to_csv(file_path, index=False)
 
             logger.info(f"Saved {len(df_sorted)} records for {symbol} to {file_path}")
@@ -341,8 +364,9 @@ class YahooCollector:
 
         if existing_df is None:
             # No existing data, download full history
-            logger.info(f"No existing data for {symbol}, downloading full history from {self.DEFAULT_START_DATE}")
-            new_df = self._get_data_from_yahoo(symbol, self.DEFAULT_START_DATE, self.end_date)
+            default_start = self.DEFAULT_WEEKLY_START_DATE if self.interval == "1wk" else self.DEFAULT_START_DATE
+            logger.info(f"No existing data for {symbol}, downloading full history from {default_start}")
+            new_df = self._get_data_from_yahoo(symbol, default_start, self.end_date)
 
             if new_df is not None:
                 self._save_data(new_df, symbol)
@@ -386,9 +410,10 @@ class YahooCollector:
             for ticker in sorted(self.abnormal_tickers):
                 f.write(f"{ticker}\n")
 
+        default_start = self.DEFAULT_WEEKLY_START_DATE if self.interval == "1wk" else self.DEFAULT_START_DATE
         for symbol in self.abnormal_tickers:
             logger.info(f"Re-downloading full data for abnormal ticker: {symbol}")
-            new_df = self._get_data_from_yahoo(symbol, self.DEFAULT_START_DATE, self.end_date)
+            new_df = self._get_data_from_yahoo(symbol, default_start, self.end_date)
 
             if new_df is not None:
                 self._save_data(new_df, symbol)
@@ -485,9 +510,10 @@ class YahooCollector:
                 return 20
             elif period_days <= 30:
                 return 10
-            else:
-                # For longer periods, use smaller batches to avoid API limits
+            elif period_days <= 60:
                 return 5
+            else:
+                return 1
 
         elif self.interval == "1min":
             # Minute data requires much smaller batches due to data volume
@@ -498,9 +524,18 @@ class YahooCollector:
             elif period_days <= 10:
                 return 3
             else:
-                # Very small batches for long minute data periods
-                return 2
-
+                return 1
+        elif self.interval == "1wk":
+            if period_days <= 30:
+                return 50
+            elif period_days <= 90:
+                return 20
+            elif period_days <= 180:
+                return 10
+            elif period_days <= 365:
+                return 5
+            else:
+                return 1
         else:
             # Default for other intervals
             return 10
@@ -595,9 +630,10 @@ class YahooCollector:
             # Phase 2: Handle full downloads (individual downloads for better error handling)
             if symbols_full_download:
                 logger.info(f"Downloading full history for {len(symbols_full_download)} symbols...")
+                default_start = self.DEFAULT_WEEKLY_START_DATE if self.interval == "1wk" else self.DEFAULT_START_DATE
                 for i, symbol in enumerate(symbols_full_download, 1):
                     logger.info(f"Full download progress: {i}/{len(symbols_full_download)} - {symbol}")
-                    new_df = self._get_data_from_yahoo(symbol, self.DEFAULT_START_DATE, self.end_date)
+                    new_df = self._get_data_from_yahoo(symbol, default_start, self.end_date)
 
                     if new_df is not None:
                         self._save_data(new_df, symbol)
