@@ -357,7 +357,7 @@ class QStockMarketDataService:
             # Collect weekly data
             collector = YahooCollector(
                 start_date=last_trading_date,
-                end_date=current_date,
+                end_date="2025-10-10",  # Far future date to ensure up to current
                 interval="1wk",
                 delay=0.5,
                 limit_nums=None

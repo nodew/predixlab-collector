@@ -145,10 +145,6 @@ class YahooCollector:
                 ticker = Ticker(symbol, asynchronous=False)
                 data = ticker.history(interval=self.interval, start=start, end=end)
 
-                # Clean up data with datetime.datetime, for example: 2025-07-13 09:30:00-04:00
-                if (self.interval == "1d" or self.interval == "1wk") and ('date' in data.columns):
-                    data["date"] = data["date"].map(lambda x: pd.Timestamp(x).date() if isinstance(x, pd.Timestamp) else pd.to_datetime(x).date())
-
                 if isinstance(data, pd.DataFrame) and not data.empty:
                     # Reset index to get date as column
                     data = data.reset_index()
@@ -160,6 +156,9 @@ class YahooCollector:
                     # Ensure required columns exist
                     required_cols = ['date', 'open', 'high', 'low', 'close', 'volume']
                     if all(col in data.columns for col in required_cols):
+                        # Clean up data with datetime.datetime, for example: 2025-07-13 09:30:00-04:00
+                        if (self.interval == "1d" or self.interval == "1wk"):
+                            data["date"] = data["date"].map(lambda x: pd.Timestamp(x).date() if isinstance(x, pd.Timestamp) else pd.to_datetime(x).date())
                         return data
                     else:
                         logger.warning(f"Missing required columns for {symbol}")
@@ -170,6 +169,9 @@ class YahooCollector:
                     if isinstance(symbol_data, pd.DataFrame) and not symbol_data.empty:
                         symbol_data = symbol_data.reset_index()
                         symbol_data['symbol'] = symbol
+                        # Clean up data with datetime.datetime, for example: 2025-07-13 09:30:00-04:00
+                        if (self.interval == "1d" or self.interval == "1wk"):
+                            symbol_data["date"] = symbol_data["date"].map(lambda x: pd.Timestamp(x).date() if isinstance(x, pd.Timestamp) else pd.to_datetime(x).date())
                         return symbol_data
 
                 logger.warning(f"Empty or invalid data for {symbol} (attempt {attempt + 1}/{self.RETRY_COUNT})")
