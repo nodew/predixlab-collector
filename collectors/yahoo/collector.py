@@ -145,6 +145,10 @@ class YahooCollector:
                 ticker = Ticker(symbol, asynchronous=False)
                 data = ticker.history(interval=self.interval, start=start, end=end)
 
+                # Clean up data with datetime.datetime, for example: 2025-07-13 09:30:00-04:00
+                if (self.interval == "1d" or self.interval == "1wk") and ('date' in data.columns):
+                    data["date"] = data["date"].map(lambda x: pd.Timestamp(x).date() if isinstance(x, pd.Timestamp) else pd.to_datetime(x).date())
+
                 if isinstance(data, pd.DataFrame) and not data.empty:
                     # Reset index to get date as column
                     data = data.reset_index()
@@ -334,10 +338,6 @@ class YahooCollector:
             # Ensure symbol column exists
             if 'symbol' not in df.columns:
                 df['symbol'] = symbol
-
-            # Clean up data with datetime.datetime, for example: 2025-07-13 09:30:00-04:00
-            if (self.interval == "1d" or self.interval == "1wk") and ('date' in df.columns):
-                df["date"] = df["date"].map(lambda x: pd.Timestamp(x).date() if isinstance(x, pd.Timestamp) else pd.to_datetime(x).date())
 
             # Sort by date and save
             df_sorted = df.sort_values('date').reset_index(drop=True)
