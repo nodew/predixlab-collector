@@ -17,15 +17,36 @@ from config import settings
 class USCalendarCollector:
     """Collector for US stock trading calendar dates."""
 
-    def __init__(self, start_date: str = "2015-01-01"):
+    # Constants
+    DEFAULT_START_DATE = "2015-01-01"
+    DEFAULT_WEEKLY_START_DATE = "2008-01-01"
+
+    def __init__(self, start_date: str = None, interval: str = "1d"):
         """Initialize the US calendar collector.
 
         Args:
-            start_date: Start date for collecting calendar data, default is "2015-01-01"
+            start_date: Start date for collecting calendar data. If None, uses 2015-01-01 for daily 
+                       data and 2008-01-01 for weekly data
+            interval: Data interval, default is "1d". Supported values: "1d", "1wk", "1mo"
         """
-        self.start_date = start_date
+        # Set default start date based on interval
+        if start_date:
+            self.start_date = start_date
+        elif interval == "1wk":
+            self.start_date = self.DEFAULT_WEEKLY_START_DATE
+        else:
+            self.start_date = self.DEFAULT_START_DATE
+        
         self.end_date = datetime.now().strftime("%Y-%m-%d")
-        self.us_calendar_path = Path(settings.us_calendar_path)
+        self.interval = interval
+        
+        # Select calendar path based on interval
+        if interval == "1wk":
+            self.us_calendar_path = Path(settings.us_weekly_calendar_path).expanduser()
+        else:
+            # For "1d" and other intervals, use the default path
+            self.us_calendar_path = Path(settings.us_calendar_path).expanduser()
+        
         self.us_calendar_path.parent.mkdir(parents=True, exist_ok=True)
         # Use S&P 500 index (^GSPC) as reference for US trading calendar
         self.reference_symbol = "^GSPC"
@@ -38,7 +59,7 @@ class USCalendarCollector:
         Returns:
             List of trading dates as pandas Timestamps
         """
-        logger.info(f"Fetching US trading calendar from {self.start_date} to {self.end_date}...")
+        logger.info(f"Fetching US trading calendar (interval={self.interval}) from {self.start_date} to {self.end_date}...")
 
         max_retries = 3
         base_delay = 1.0  # Base delay in seconds
@@ -50,7 +71,7 @@ class USCalendarCollector:
 
                 # Get historical data with maximum period to cover from start_date
                 hist_data = ticker.history(
-                    interval="1d",
+                    interval=self.interval,
                     start=self.start_date,
                     end=self.end_date
                 )
@@ -157,13 +178,15 @@ class USCalendarCollector:
             logger.error(f"US trading calendar collection failed: {e}")
             raise
 
-def collect_us_calendar(start_date: str = "2015-01-01"):
+def collect_us_calendar(start_date: str = None, interval: str = "1d"):
     """Main entry point for US trading calendar collection.
 
     Args:
-        start_date: Start date for collecting calendar data, default is "2015-01-01"
+        start_date: Start date for collecting calendar data. If None, uses 2015-01-01 for daily 
+                   data and 2008-01-01 for weekly data
+        interval: Data interval, default is "1d". Supported values: "1d", "1wk", "1mo"
     """
-    collector = USCalendarCollector(start_date=start_date)
+    collector = USCalendarCollector(start_date=start_date, interval=interval)
     collector.collect()
 
 if __name__ == "__main__":

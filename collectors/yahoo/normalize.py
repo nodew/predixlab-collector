@@ -35,7 +35,10 @@ class YahooNormalizer:
         max_workers: int = None,
         date_field_name: str = "date",
         symbol_field_name: str = "symbol",
-        calendar_list: Optional[List] = None
+        calendar_list: Optional[List] = None,
+        interval: str = "1d",
+        source_dir: Optional[str] = None,
+        target_dir: Optional[str] = None
     ):
         """Initialize Yahoo Finance normalizer.
 
@@ -53,6 +56,12 @@ class YahooNormalizer:
             Symbol field name, default "symbol"
         calendar_list : Optional[List]
             Trading calendar list for reindexing, default None
+        interval : str
+            Data interval, default "1d" (supports "1d", "1wk", etc.)
+        source_dir : Optional[str]
+            Custom source data directory path, default None (uses config based on interval)
+        target_dir : Optional[str]
+            Custom target data directory path, default None (uses config based on interval)
         """
         self.start_date = start_date
         self.end_date = end_date
@@ -60,10 +69,22 @@ class YahooNormalizer:
         self.date_field_name = date_field_name
         self.symbol_field_name = symbol_field_name
         self.calendar_list = calendar_list
+        self.interval = interval
 
-        # Get paths from config
-        self.us_stock_data_dir = Path(settings.us_stock_data_dir)
-        self.us_normalized_data_dir = Path(settings.us_normalized_data_dir)
+        # Get paths from config or custom paths
+        if source_dir:
+            self.us_stock_data_dir = Path(source_dir).expanduser()
+        elif interval == "1wk":
+            self.us_stock_data_dir = Path(settings.us_stock_weekly_data_dir).expanduser()
+        else:
+            self.us_stock_data_dir = Path(settings.us_stock_data_dir).expanduser()
+
+        if target_dir:
+            self.us_normalized_data_dir = Path(target_dir).expanduser()
+        elif interval == "1wk":
+            self.us_normalized_data_dir = Path(settings.us_normalized_weekly_data_dir).expanduser()
+        else:
+            self.us_normalized_data_dir = Path(settings.us_normalized_data_dir).expanduser()
 
         # Ensure normalized data directory exists
         self.us_normalized_data_dir.mkdir(parents=True, exist_ok=True)
