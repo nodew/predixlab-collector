@@ -5,7 +5,7 @@ using Yahoo Finance data through yahooquery, and saves them to the configured fi
 """
 
 import pandas as pd
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from loguru import logger
 from typing import List
@@ -19,14 +19,14 @@ class USCalendarCollector:
 
     # Constants
     DEFAULT_START_DATE = "2015-01-01"
-    DEFAULT_WEEKLY_START_DATE = "2008-01-01"
+    DEFAULT_WEEKLY_START_DATE = "2007-12-31"
 
     def __init__(self, start_date: str = None, interval: str = "1d"):
         """Initialize the US calendar collector.
 
         Args:
             start_date: Start date for collecting calendar data. If None, uses 2015-01-01 for daily 
-                       data and 2008-01-01 for weekly data
+                       data and 2007-12-31 for weekly data
             interval: Data interval, default is "1d". Supported values: "1d", "1wk", "1mo"
         """
         # Set default start date based on interval
@@ -87,18 +87,21 @@ class USCalendarCollector:
                     # If single index (date)
                     trading_dates = hist_data.index
 
+                last_friday = datetime.now().date() - timedelta(days=(datetime.now().weekday() - 4) % 7)
                 # Convert to list of pandas Timestamps and remove timezone info
-                trading_dates = [
-                    pd.Timestamp(date.strftime("%Y-%m-%d")) if hasattr(date, 'strftime')
-                    else pd.Timestamp(date) for date in trading_dates
-                ]
+                if self.interval == "1d":
+                    # For daily data, keep only dates without time component
+                    trading_dates = [x for x in trading_dates if isinstance(x, date) and x.strftime('%H:%M:%S') == '00:00:00']
+                elif self.interval == "1wk":
+                    # For weekly data, keep only dates without time component and ensure they are Mondays (for weekly)
+                    trading_dates = [x for x in trading_dates if isinstance(x, date) and x.strftime('%H:%M:%S') == '00:00:00' and x < last_friday]
 
                 # Sort the dates
                 trading_dates = sorted(trading_dates)
 
                 # Filter to ensure dates are within our specified range
-                start_ts = pd.Timestamp(self.start_date)
-                end_ts = pd.Timestamp(self.end_date)
+                start_ts = datetime.strptime(self.start_date, "%Y-%m-%d").date()
+                end_ts = datetime.strptime(self.end_date, "%Y-%m-%d").date()
                 trading_dates = [date for date in trading_dates if start_ts <= date <= end_ts]
 
                 logger.info(f"Successfully fetched {len(trading_dates)} US trading dates")
@@ -183,7 +186,7 @@ def collect_us_calendar(start_date: str = None, interval: str = "1d"):
 
     Args:
         start_date: Start date for collecting calendar data. If None, uses 2015-01-01 for daily 
-                   data and 2008-01-01 for weekly data
+                   data and 2007-12-31 for weekly data
         interval: Data interval, default is "1d". Supported values: "1d", "1wk", "1mo"
     """
     collector = USCalendarCollector(start_date=start_date, interval=interval)

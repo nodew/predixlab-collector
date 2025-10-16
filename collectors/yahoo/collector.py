@@ -10,7 +10,7 @@ import numpy as np
 from pathlib import Path
 from loguru import logger
 from typing import Optional, List, Tuple
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 import time
 import requests
 from yahooquery import Ticker
@@ -23,7 +23,7 @@ class YahooCollector:
 
     # Constants
     DEFAULT_START_DATE = "2015-01-01"
-    DEFAULT_WEEKLY_START_DATE = "2008-01-01"
+    DEFAULT_WEEKLY_START_DATE = "2007-12-31"
     ABNORMAL_CHANGE_THRESHOLD = 0.5  # 50% change threshold for abnormal data detection
     RETRY_COUNT = 3
     DELAY_BETWEEN_REQUESTS = 0.5
@@ -121,6 +121,39 @@ class YahooCollector:
             logger.error(f"Failed to load symbols from {self.us_index_path}: {e}")
             raise
 
+    def _filter_data(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Filter out rows with timestamps in the date column.
+
+        Parameters
+        ----------
+        data : pd.DataFrame
+            DataFrame with a 'date' column
+
+        Returns
+        -------
+        pd.DataFrame
+            Filtered DataFrame with only date entries (no timestamps)
+        """
+        required_cols = ['date', 'open', 'high', 'low', 'close', 'volume']
+        if not all(col in data.columns for col in required_cols):
+            logger.warning("Data does not contain all required columns for filtering")
+            return pd.DataFrame()  # Return empty DataFrame if columns missing
+
+        # Only filter for daily and weekly intervals
+        if self.interval not in ["1d", "1wk"]:
+            return data
+
+        last_friday = datetime.now().date() - timedelta(days=(datetime.now().weekday() - 4) % 7)
+
+        if self.interval == "1d":
+            # For daily data, keep only rows where time is 00:00:00
+            filtered_data = data[data["date"].apply(lambda x: isinstance(x, date) and x.strftime('%H:%M:%S') == '00:00:00')]
+        elif self.interval == "1wk":
+            # For weekly data, keep only rows where time is 00:00:00 and day is Monday older than last Friday
+            filtered_data = data[data["date"].apply(lambda x: isinstance(x, date) and x.strftime('%H:%M:%S') == '00:00:00' and x < last_friday)]
+
+        return filtered_data
+
     def _get_data_from_yahoo(self, symbol: str, start: str, end: str) -> Optional[pd.DataFrame]:
         """Get stock data from Yahoo Finance.
 
@@ -144,6 +177,7 @@ class YahooCollector:
 
                 ticker = Ticker(symbol, asynchronous=False)
                 data = ticker.history(interval=self.interval, start=start, end=end)
+                filtered_data = None
 
                 if isinstance(data, pd.DataFrame) and not data.empty:
                     # Reset index to get date as column
@@ -153,15 +187,7 @@ class YahooCollector:
                     if 'symbol' not in data.columns:
                         data['symbol'] = symbol
 
-                    # Ensure required columns exist
-                    required_cols = ['date', 'open', 'high', 'low', 'close', 'volume']
-                    if all(col in data.columns for col in required_cols):
-                        # Clean up data with datetime.datetime, for example: 2025-07-13 09:30:00-04:00
-                        if (self.interval == "1d" or self.interval == "1wk"):
-                            data["date"] = data["date"].map(lambda x: pd.Timestamp(x).date() if isinstance(x, pd.Timestamp) else pd.to_datetime(x).date())
-                        return data
-                    else:
-                        logger.warning(f"Missing required columns for {symbol}")
+                    filtered_data = self._filter_data(data)
 
                 elif isinstance(data, dict) and symbol in data:
                     # Handle case where data is returned as dict
@@ -169,13 +195,13 @@ class YahooCollector:
                     if isinstance(symbol_data, pd.DataFrame) and not symbol_data.empty:
                         symbol_data = symbol_data.reset_index()
                         symbol_data['symbol'] = symbol
-                        # Clean up data with datetime.datetime, for example: 2025-07-13 09:30:00-04:00
-                        if (self.interval == "1d" or self.interval == "1wk"):
-                            symbol_data["date"] = symbol_data["date"].map(lambda x: pd.Timestamp(x).date() if isinstance(x, pd.Timestamp) else pd.to_datetime(x).date())
-                        return symbol_data
+                        filtered_data = self._filter_data(symbol_data)
 
-                logger.warning(f"Empty or invalid data for {symbol} (attempt {attempt + 1}/{self.RETRY_COUNT})")
-
+                if filtered_data is not None and not filtered_data.empty:
+                    return filtered_data
+                else:
+                    logger.warning(f"Empty or invalid data for {symbol} (attempt {attempt + 1}/{self.RETRY_COUNT})")
+                    return pd.DataFrame()  # Return empty DataFrame if no valid data
             except Exception as e:
                 logger.warning(f"Error fetching {symbol} (attempt {attempt + 1}/{self.RETRY_COUNT}): {e}")
                 if attempt < self.RETRY_COUNT - 1:
@@ -370,7 +396,7 @@ class YahooCollector:
             logger.info(f"No existing data for {symbol}, downloading full history from {default_start}")
             new_df = self._get_data_from_yahoo(symbol, default_start, self.end_date)
 
-            if new_df is not None:
+            if new_df is not None and not new_df.empty:
                 self._save_data(new_df, symbol)
             else:
                 logger.error(f"Failed to download full data for {symbol}")
@@ -451,7 +477,7 @@ class YahooCollector:
                 symbols_str = " ".join(symbols)
                 ticker = Ticker(symbols_str, asynchronous=False)
                 data = ticker.history(interval=self.interval, start=start, end=end)
-
+                filtered_data = None
                 if isinstance(data, pd.DataFrame) and not data.empty:
                     # Check if we have MultiIndex (symbol, date)
                     if isinstance(data.index, pd.MultiIndex):
@@ -459,19 +485,19 @@ class YahooCollector:
                         data = data.reset_index()
 
                         # Ensure required columns exist
-                        required_cols = ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume']
-                        if all(col in data.columns for col in required_cols):
-                            return data
-                        else:
-                            logger.warning(f"Missing required columns in batch data for {symbols}")
+                        filtered_data = self._filter_data(data)
                     else:
                         # Single symbol case
                         data = data.reset_index()
                         if len(symbols) == 1:
                             data['symbol'] = symbols[0]
-                            return data
+                            filtered_data = self._filter_data(data)
 
-                logger.warning(f"Empty or invalid batch data for {symbols} (attempt {attempt + 1}/{self.RETRY_COUNT})")
+                if filtered_data is not None and not filtered_data.empty:
+                    return filtered_data
+                else:
+                    logger.warning(f"Empty or invalid batch data for {symbols} (attempt {attempt + 1}/{self.RETRY_COUNT})")
+                    return None  # Return empty DataFrame if no valid data
 
             except Exception as e:
                 logger.warning(f"Error fetching batch data for {symbols} (attempt {attempt + 1}/{self.RETRY_COUNT}): {e}")
@@ -619,7 +645,7 @@ class YahooCollector:
                     symbols_full_download.append(symbol)
                 else:
                     # Check if incremental update is needed
-                    start_download = max(pd.Timestamp(self.start_date), pd.Timestamp(max_date) + pd.Timedelta(days=1))
+                    start_download = max(pd.Timestamp(self.start_date), pd.Timestamp(max_date))
                     end_download = pd.Timestamp(self.end_date)
 
                     if start_download <= end_download:

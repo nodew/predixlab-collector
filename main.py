@@ -325,15 +325,15 @@ class QStockMarketDataService:
             current_date = datetime.now().strftime("%Y-%m-%d")
             calendar_path = Path(settings.us_weekly_calendar_path).expanduser()
             if not calendar_path.exists():
-                logger.warning(f"US weekly calendar file not found: {calendar_path}, defaulting last_trading_date to 2008-01-01")
-                last_trading_date = "2008-01-01"
+                logger.warning(f"US weekly calendar file not found: {calendar_path}, defaulting last_trading_date to 2007-12-31")
+                last_trading_date = "2007-12-31"
             else:
                 with calendar_path.open('r', encoding='utf-8') as f:
                     lines = [line.strip() for line in f if line.strip()]
 
                 if not lines:
-                    logger.warning(f"US weekly calendar file is empty: {calendar_path}, defaulting last_trading_date to 2008-01-01")
-                    last_trading_date = "2008-01-01"
+                    logger.warning(f"US weekly calendar file is empty: {calendar_path}, defaulting last_trading_date to 2007-12-31")
+                    last_trading_date = "2007-12-31"
                 else:
                     last_trading_date = lines[-2] if len(lines) >= 2 else lines[0]
             # Validate date format
@@ -357,7 +357,7 @@ class QStockMarketDataService:
             # Collect weekly data
             collector = YahooCollector(
                 start_date=last_trading_date,
-                end_date="2025-10-10",  # Far future date to ensure up to current
+                end_date=current_date,  # Far future date to ensure up to current
                 interval="1wk",
                 delay=0.5,
                 limit_nums=None
