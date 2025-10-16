@@ -143,14 +143,24 @@ class YahooCollector:
         if self.interval not in ["1d", "1wk"]:
             return data
 
-        last_friday = datetime.now().date() - timedelta(days=(datetime.now().weekday() - 4) % 7)
+        # Make a copy and normalize date column
+        data_copy = data.copy()
 
+        # Vectorized filtering - much faster than lambda
         if self.interval == "1d":
             # For daily data, keep only rows where time is 00:00:00
-            filtered_data = data[data["date"].apply(lambda x: isinstance(x, date) and x.strftime('%H:%M:%S') == '00:00:00')]
+            mask = data_copy['date'].dt.time == pd.Timestamp('00:00:00').time()
+            filtered_data = data_copy[mask].copy()
         elif self.interval == "1wk":
-            # For weekly data, keep only rows where time is 00:00:00 and day is Monday older than last Friday
-            filtered_data = data[data["date"].apply(lambda x: isinstance(x, date) and x.strftime('%H:%M:%S') == '00:00:00' and x < last_friday)]
+            # For weekly data, keep only rows where time is 00:00:00 and day is before last Friday
+            last_friday = datetime.now().date() - timedelta(days=(datetime.now().weekday() - 4) % 7)
+            mask = (
+                (data_copy['date'].dt.time == pd.Timestamp('00:00:00').time()) &
+                (data_copy['date'].dt.date < last_friday)
+            )
+            filtered_data = data_copy[mask].copy()
+        else:
+            filtered_data = data_copy.copy()
 
         return filtered_data
 
@@ -265,34 +275,40 @@ class YahooCollector:
             return False
 
         try:
-            # Calculate daily returns
+            # Calculate daily returns using vectorized operations
             df_sorted = df.sort_values('date').copy()
+            
+            # Use shift for previous close - more efficient
             df_sorted['prev_close'] = df_sorted['close'].shift(1)
-            df_sorted['daily_return'] = (df_sorted['close'] / df_sorted['prev_close'] - 1).abs()
-
+            
+            # Vectorized return calculation
+            with np.errstate(divide='ignore', invalid='ignore'):
+                daily_return = np.abs(df_sorted['close'] / df_sorted['prev_close'] - 1)
+            
             # Check for extreme price changes
-            extreme_changes = df_sorted['daily_return'] > self.ABNORMAL_CHANGE_THRESHOLD
-
-            if extreme_changes.any():
-                anomaly_count = extreme_changes.sum()
+            extreme_changes = daily_return > self.ABNORMAL_CHANGE_THRESHOLD
+            if np.any(extreme_changes):
+                anomaly_count = np.sum(extreme_changes)
                 logger.warning(f"Detected {anomaly_count} extreme price changes for {symbol}")
                 return True
 
-            # Check for zero or negative prices
-            invalid_prices = (df_sorted['close'] <= 0) | (df_sorted['open'] <= 0) | \
-                           (df_sorted['high'] <= 0) | (df_sorted['low'] <= 0)
-
+            # Check for zero or negative prices using vectorized operations
+            price_cols = ['close', 'open', 'high', 'low']
+            invalid_prices = (df_sorted[price_cols] <= 0).any(axis=1)
+            
             if invalid_prices.any():
                 invalid_count = invalid_prices.sum()
                 logger.warning(f"Detected {invalid_count} invalid prices for {symbol}")
                 return True
 
-            # Check for illogical OHLC relationships
-            illogical_ohlc = (df_sorted['high'] < df_sorted['low']) | \
-                           (df_sorted['high'] < df_sorted['open']) | \
-                           (df_sorted['high'] < df_sorted['close']) | \
-                           (df_sorted['low'] > df_sorted['open']) | \
-                           (df_sorted['low'] > df_sorted['close'])
+            # Check for illogical OHLC relationships using vectorized operations
+            illogical_ohlc = (
+                (df_sorted['high'] < df_sorted['low']) |
+                (df_sorted['high'] < df_sorted['open']) |
+                (df_sorted['high'] < df_sorted['close']) |
+                (df_sorted['low'] > df_sorted['open']) |
+                (df_sorted['low'] > df_sorted['close'])
+            )
 
             if illogical_ohlc.any():
                 illogical_count = illogical_ohlc.sum()

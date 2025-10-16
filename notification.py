@@ -8,23 +8,33 @@ from config import settings
 
 
 def send_email_notification(job_status: Dict[str, Any]) -> bool:
-    """
-    Send email notification via Azure Communication Service.
+    """Send email notification via Azure Communication Service.
 
     Args:
         job_status: Dictionary containing job execution status and metadata
+            Required keys:
+                - status: Job status ('success' or 'failed')
+                - job_name: Internal job identifier
+                - job_display_name: Human-readable job name
+                - start_time: ISO format start time
+                - end_time: ISO format end time
+                - duration_seconds: Duration in seconds
+            Optional keys:
+                - error: Error message (if failed)
+                - warning: Warning message
+                - results: Dict with execution results
 
     Returns:
-        bool: True if email sent successfully, False otherwise
+        True if email sent successfully, False otherwise.
     """
     try:
-        # Check if ACS is configured
-        if not settings.acs_connection_string or not settings.acs_sender_email or not settings.acs_to_emails:
+        # Check if ACS is configured using the new helper method
+        if not settings.is_email_configured():
             logger.warning("Azure Communication Service not configured, skipping email notification")
             return False
 
-        # Parse recipient emails
-        to_emails = [email.strip() for email in settings.acs_to_emails.split(',') if email.strip()]
+        # Get validated recipient emails
+        to_emails = settings.get_to_emails_list()
         if not to_emails:
             logger.warning("No recipient emails configured, skipping email notification")
             return False
@@ -121,7 +131,11 @@ def send_email_notification(job_status: Dict[str, Any]) -> bool:
         """
 
         # Create and send email
-        client = EmailClient.from_connection_string(settings.acs_connection_string)
+        try:
+            client = EmailClient.from_connection_string(settings.acs_connection_string)
+        except Exception as e:
+            logger.error(f"Failed to create email client: {e}")
+            return False
         
         message = {
             "senderAddress": settings.acs_sender_email,
@@ -134,11 +148,15 @@ def send_email_notification(job_status: Dict[str, Any]) -> bool:
             }
         }
 
-        poller = client.begin_send(message)
-        result = poller.result()
-        
-        logger.info(f"Email notification sent successfully. Message ID: {result['id']}")
-        return True
+        try:
+            poller = client.begin_send(message)
+            result = poller.result()
+            
+            logger.info(f"Email notification sent successfully. Message ID: {result['id']}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to send email via ACS: {e}")
+            return False
 
     except Exception as e:
         logger.error(f"Failed to send email notification: {e}")

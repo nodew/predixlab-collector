@@ -96,28 +96,30 @@ class YahooNormalizer:
 
     @staticmethod
     def calc_change(df: pd.DataFrame, last_close: Optional[float] = None) -> pd.Series:
-        """Calculate daily change/return series.
+        """Calculate daily change/return series using vectorized operations.
 
         Parameters
         ----------
         df : pd.DataFrame
-            Stock data DataFrame
+            Stock data DataFrame with 'close' column
         last_close : Optional[float]
-            Last close price from previous period, default None
+            Last close price from previous period
 
         Returns
         -------
         pd.Series
             Daily change series
         """
-        df_copy = df.copy()
-        close_series = df_copy["close"].ffill()
+        close_series = df["close"].ffill()
         prev_close_series = close_series.shift(1)
 
         if last_close is not None:
             prev_close_series.iloc[0] = float(last_close)
 
-        change_series = close_series / prev_close_series - 1
+        # Vectorized calculation with proper handling of division by zero
+        with np.errstate(divide='ignore', invalid='ignore'):
+            change_series = close_series / prev_close_series - 1
+        
         return change_series
 
     def normalize_yahoo_data(
@@ -177,14 +179,16 @@ class YahooNormalizer:
         columns_to_nan = list(set(df_norm.columns) - {self.symbol_field_name})
         df_norm.loc[invalid_volume_mask, columns_to_nan] = np.nan
 
-        # Anomaly correction loop
+        # Anomaly correction loop with improved efficiency
         correction_count = 0
-        while True:
+        while correction_count < self.MAX_CORRECTION_ITERATIONS:
             change_series = self.calc_change(df_norm, last_close)
 
-            # Find anomalous changes (factor of 89-111, suggesting price in cents instead of dollars)
-            anomaly_mask = (change_series >= self.ABNORMAL_CHANGE_MIN) & \
-                          (change_series <= self.ABNORMAL_CHANGE_MAX)
+            # Find anomalous changes using vectorized operations
+            anomaly_mask = (
+                (change_series >= self.ABNORMAL_CHANGE_MIN) &
+                (change_series <= self.ABNORMAL_CHANGE_MAX)
+            )
 
             if not anomaly_mask.any():
                 break
@@ -194,15 +198,18 @@ class YahooNormalizer:
             if "adjclose" in df_norm.columns:
                 price_cols.append("adjclose")
 
-            df_norm.loc[anomaly_mask, price_cols] = df_norm.loc[anomaly_mask, price_cols] / 100
+            # Use vectorized division instead of loc assignment
+            for col in price_cols:
+                if col in df_norm.columns:
+                    df_norm.loc[anomaly_mask, col] /= 100
 
             correction_count += 1
-            if correction_count >= self.MAX_CORRECTION_ITERATIONS:
-                logger.warning(
-                    f"{symbol}: Abnormal change detected for {correction_count} consecutive iterations. "
-                    f"Please check data manually."
-                )
-                break
+
+        if correction_count >= self.MAX_CORRECTION_ITERATIONS:
+            logger.warning(
+                f"{symbol}: Abnormal change detected for {correction_count} consecutive iterations. "
+                f"Please check data manually."
+            )
 
         # Calculate final change series
         df_norm["change"] = self.calc_change(df_norm, last_close)
