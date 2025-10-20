@@ -13,6 +13,7 @@ import time
 from yahooquery import Ticker
 
 from config import settings
+from utils import normalize_datetime_to_date
 
 class USCalendarCollector:
     """Collector for US stock trading calendar dates."""
@@ -87,14 +88,14 @@ class USCalendarCollector:
                     # If single index (date)
                     trading_dates = hist_data.index
 
-                last_friday = datetime.now().date() - timedelta(days=(datetime.now().weekday() - 4) % 7)
-                # Convert to list of pandas Timestamps and remove timezone info
-                if self.interval == "1d":
-                    # For daily data, keep only dates without time component
-                    trading_dates = [x for x in trading_dates if isinstance(x, date) and x.strftime('%H:%M:%S') == '00:00:00']
-                elif self.interval == "1wk":
-                    # For weekly data, keep only dates without time component and ensure they are Mondays (for weekly)
-                    trading_dates = [x for x in trading_dates if isinstance(x, date) and x.strftime('%H:%M:%S') == '00:00:00' and x < last_friday]
+                trading_dates = [normalize_datetime_to_date(date) for date in trading_dates]
+
+                if (self.interval == "1wk"):
+                    today = date.today()
+                    days = today.weekday()
+                    last_week_monday = today - timedelta(days=7 + days) # Last week's Monday
+
+                    trading_dates = [d for d in trading_dates if d <= last_week_monday]
 
                 # Sort the dates
                 trading_dates = sorted(trading_dates)

@@ -118,6 +118,9 @@ class USIndexCollector:
         # Combine both DataFrames
         combined_df = pd.concat([sp500_df, nasdaq100_df], ignore_index=True)
 
+        # Replace dots with hyphens in symbols (e.g., BRK.B -> BRK-B)
+        combined_df['symbol'] = combined_df['symbol'].str.replace('.', '-', regex=False)
+
         # Remove duplicates, keeping the first occurrence (which will have the earlier date)
         combined_df = combined_df.drop_duplicates(subset=['symbol'], keep='first')
 

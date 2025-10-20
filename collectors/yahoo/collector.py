@@ -17,6 +17,7 @@ from yahooquery import Ticker
 from dateutil.tz import tzlocal
 
 from config import settings
+from utils import normalize_datetime_to_date
 
 class YahooCollector:
     """Yahoo Finance data collector for US stocks."""
@@ -121,7 +122,7 @@ class YahooCollector:
             logger.error(f"Failed to load symbols from {self.us_index_path}: {e}")
             raise
 
-    def _filter_data(self, data: pd.DataFrame) -> pd.DataFrame:
+    def _normalize_and_filter_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """Filter out rows with timestamps in the date column.
 
         Parameters
@@ -144,23 +145,16 @@ class YahooCollector:
             return data
 
         # Make a copy and normalize date column
-        data_copy = data.copy()
+        filtered_data = data.copy()
 
-        # Vectorized filtering - much faster than lambda
-        if self.interval == "1d":
-            # For daily data, keep only rows where time is 00:00:00
-            mask = data_copy['date'].dt.time == pd.Timestamp('00:00:00').time()
-            filtered_data = data_copy[mask].copy()
-        elif self.interval == "1wk":
-            # For weekly data, keep only rows where time is 00:00:00 and day is before last Friday
-            last_friday = datetime.now().date() - timedelta(days=(datetime.now().weekday() - 4) % 7)
-            mask = (
-                (data_copy['date'].dt.time == pd.Timestamp('00:00:00').time()) &
-                (data_copy['date'].dt.date < last_friday)
-            )
-            filtered_data = data_copy[mask].copy()
-        else:
-            filtered_data = data_copy.copy()
+        filtered_data['date'] = filtered_data['date'].apply(normalize_datetime_to_date)
+
+        if self.interval == "1wk":
+            # For weekly data, keep only rows where time is 00:00:00 and day is before last Monday
+            days = date.today().weekday()
+            last_week_monday = date.today() - timedelta(days=7 + days)  # Last week's Monday
+            mask = (filtered_data['date'] <= last_week_monday)
+            filtered_data = filtered_data[mask]
 
         return filtered_data
 
@@ -197,7 +191,7 @@ class YahooCollector:
                     if 'symbol' not in data.columns:
                         data['symbol'] = symbol
 
-                    filtered_data = self._filter_data(data)
+                    filtered_data = self._normalize_and_filter_data(data)
 
                 elif isinstance(data, dict) and symbol in data:
                     # Handle case where data is returned as dict
@@ -205,7 +199,7 @@ class YahooCollector:
                     if isinstance(symbol_data, pd.DataFrame) and not symbol_data.empty:
                         symbol_data = symbol_data.reset_index()
                         symbol_data['symbol'] = symbol
-                        filtered_data = self._filter_data(symbol_data)
+                        filtered_data = self._normalize_and_filter_data(symbol_data)
 
                 if filtered_data is not None and not filtered_data.empty:
                     return filtered_data
@@ -321,6 +315,88 @@ class YahooCollector:
             logger.warning(f"Error detecting anomalies for {symbol}: {e}")
             return False
 
+    def _detect_overlapping_data_anomalies(self, existing_df: pd.DataFrame, new_df: pd.DataFrame, symbol: str) -> bool:
+        """Detect anomalies in overlapping date data between existing and new data.
+
+        Parameters
+        ----------
+        existing_df : pd.DataFrame
+            Existing data
+        new_df : pd.DataFrame
+            New data
+        symbol : str
+            Stock symbol
+
+        Returns
+        -------
+        bool
+            True if anomalies detected in overlapping data, False otherwise
+        """
+        try:
+            # Find overlapping dates
+            existing_dates = set(existing_df['date'])
+            new_dates = set(new_df['date'])
+            overlapping_dates = existing_dates.intersection(new_dates)
+
+            if not overlapping_dates:
+                logger.debug(f"No overlapping dates for {symbol}")
+                return False
+
+            logger.info(f"Checking {len(overlapping_dates)} overlapping dates for {symbol}")
+
+            # Get overlapping records
+            existing_overlap = existing_df[existing_df['date'].isin(overlapping_dates)].sort_values('date')
+            new_overlap = new_df[new_df['date'].isin(overlapping_dates)].sort_values('date')
+
+            # Check for inconsistencies in overlapping data
+            price_cols = ['open', 'high', 'low', 'close']
+            tolerance = 0.01  # 1% tolerance for price differences
+
+            for date in overlapping_dates:
+                existing_row = existing_overlap[existing_overlap['date'] == date].iloc[0]
+                new_row = new_overlap[new_overlap['date'] == date].iloc[0]
+
+                # Compare prices with tolerance
+                for col in price_cols:
+                    existing_val = existing_row[col]
+                    new_val = new_row[col]
+
+                    # Skip if either value is NaN
+                    if pd.isna(existing_val) or pd.isna(new_val):
+                        continue
+
+                    # Calculate relative difference
+                    if existing_val != 0:
+                        rel_diff = abs(new_val - existing_val) / abs(existing_val)
+                        if rel_diff > tolerance:
+                            logger.warning(
+                                f"Price inconsistency for {symbol} on {date}: "
+                                f"{col} differs by {rel_diff*100:.2f}% "
+                                f"(existing: {existing_val}, new: {new_val})"
+                            )
+                            return True
+
+                # Check volume consistency (larger tolerance for volume)
+                if 'volume' in existing_row and 'volume' in new_row:
+                    existing_vol = existing_row['volume']
+                    new_vol = new_row['volume']
+                    
+                    if not pd.isna(existing_vol) and not pd.isna(new_vol) and existing_vol != 0:
+                        vol_diff = abs(new_vol - existing_vol) / abs(existing_vol)
+                        if vol_diff > 0.1:  # 10% tolerance for volume
+                            logger.warning(
+                                f"Volume inconsistency for {symbol} on {date}: "
+                                f"differs by {vol_diff*100:.2f}% "
+                                f"(existing: {existing_vol}, new: {new_vol})"
+                            )
+                            return True
+
+            return False
+
+        except Exception as e:
+            logger.warning(f"Error detecting overlapping anomalies for {symbol}: {e}")
+            return False
+
     def _merge_data(self, existing_df: pd.DataFrame, new_df: pd.DataFrame, symbol: str) -> pd.DataFrame:
         """Merge existing and new data.
 
@@ -343,16 +419,16 @@ class YahooCollector:
             existing_df['date'] = pd.to_datetime(existing_df['date'])
             new_df['date'] = pd.to_datetime(new_df['date'])
 
+            # Check for anomalies in overlapping data before merging
+            if self._detect_overlapping_data_anomalies(existing_df, new_df, symbol):
+                logger.warning(f"Anomalies detected in overlapping data for {symbol}, marking for full re-download")
+                self.abnormal_tickers.add(symbol)
+                return existing_df  # Return existing data for now
+
             # Combine and remove duplicates, keeping new data
             combined_df = pd.concat([existing_df, new_df], ignore_index=True)
             combined_df = combined_df.drop_duplicates(subset=['date'], keep='last')
             combined_df = combined_df.sort_values('date').reset_index(drop=True)
-
-            # Check for anomalies in merged data
-            if self._detect_data_anomalies(combined_df, symbol):
-                logger.warning(f"Anomalies detected in merged data for {symbol}, marking for full re-download")
-                self.abnormal_tickers.add(symbol)
-                return existing_df  # Return existing data for now
 
             logger.info(f"Successfully merged data for {symbol}: {len(combined_df)} total records")
             return combined_df
@@ -501,13 +577,13 @@ class YahooCollector:
                         data = data.reset_index()
 
                         # Ensure required columns exist
-                        filtered_data = self._filter_data(data)
+                        filtered_data = self._normalize_and_filter_data(data)
                     else:
                         # Single symbol case
                         data = data.reset_index()
                         if len(symbols) == 1:
                             data['symbol'] = symbols[0]
-                            filtered_data = self._filter_data(data)
+                            filtered_data = self._normalize_and_filter_data(data)
 
                 if filtered_data is not None and not filtered_data.empty:
                     return filtered_data

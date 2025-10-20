@@ -2,10 +2,11 @@
 
 Provides common helper functions used across different modules.
 """
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Optional, Tuple
 from loguru import logger
+import pandas as pd
 
 
 def read_last_trading_date(
@@ -130,3 +131,23 @@ def validate_date_format(date_string: str) -> bool:
         return True
     except ValueError:
         return False
+
+def normalize_datetime_to_date(val):
+    """Convert to datetime and strip timezone without changing the time value"""
+    if pd.isna(val):
+        return pd.NaT
+    
+    if isinstance(val, datetime):
+        return val.date()
+
+    # If already a date, return as is
+    if isinstance(val, date):
+        return val
+
+    # Convert to Timestamp if needed
+    dt = val if isinstance(val, pd.Timestamp) else pd.to_datetime(val, errors='coerce')
+    
+    # Return date, stripping timezone if present
+    if pd.notna(dt):
+        return (dt.tz_localize(None) if dt.tz else dt).date()
+    return pd.NaT
