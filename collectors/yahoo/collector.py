@@ -150,10 +150,16 @@ class YahooCollector:
         filtered_data['date'] = filtered_data['date'].apply(normalize_datetime_to_date)
 
         if self.interval == "1wk":
-            # For weekly data, keep only rows where time is 00:00:00 and day is before last Monday
-            days = date.today().weekday()
-            last_week_monday = date.today() - timedelta(days=7 + days)  # Last week's Monday
-            mask = (filtered_data['date'] <= last_week_monday)
+            # For weekly data, keep only rows where time is 00:00:00 and day is before the reference Monday
+            # If today is Saturday (5) or Sunday (6), use this week's Monday
+            # Otherwise (Mon-Fri), use last week's Monday
+            today = date.today()
+            days = today.weekday()
+            if days >= 5:  # Saturday or Sunday
+                reference_monday = today - timedelta(days=days)  # This week's Monday
+            else:  # Monday to Friday
+                reference_monday = today - timedelta(days=7 + days)  # Last week's Monday
+            mask = (filtered_data['date'] <= reference_monday)
             filtered_data = filtered_data[mask]
 
         return filtered_data

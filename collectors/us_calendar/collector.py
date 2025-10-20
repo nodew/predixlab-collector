@@ -93,9 +93,12 @@ class USCalendarCollector:
                 if (self.interval == "1wk"):
                     today = date.today()
                     days = today.weekday()
-                    last_week_monday = today - timedelta(days=7 + days) # Last week's Monday
+                    if days >= 5:  # Saturday or Sunday
+                        reference_monday = today - timedelta(days=days)  # This week's Monday
+                    else:  # Monday to Friday
+                        reference_monday = today - timedelta(days=7 + days)  # Last week's Monday
 
-                    trading_dates = [d for d in trading_dates if d <= last_week_monday]
+                    trading_dates = [d for d in trading_dates if d <= reference_monday]
 
                 # Sort the dates
                 trading_dates = sorted(trading_dates)
