@@ -22,3 +22,16 @@ dependencies = [
     "pymongo>=4.10.1",
     "azure-communication-email>=1.0.0",
 ]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.4.0",
+    "pytest-mock>=3.14.0",
+    "pytest-cov>=6.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
