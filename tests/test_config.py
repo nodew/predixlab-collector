@@ -169,7 +169,8 @@ class TestSettingsDefaultValues:
         settings = Settings()
         assert settings.index_dir == "data/instruments"
         assert settings.us_index_path == "data/instruments/us.txt"
-        assert settings.cn_index_path == "data/instruments/cn.txt"
+        assert settings.csi300_index_path == "data/instruments/csi300.txt"
+        assert settings.csi500_index_path == "data/instruments/csi500.txt"
 
     def test_default_mongodb_settings(self):
         """Test default MongoDB settings."""

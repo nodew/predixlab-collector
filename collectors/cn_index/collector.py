@@ -1,7 +1,7 @@
 """CN Index collector module.
 
 This module collects the latest constituents of Chinese stock indices (CSI 300 and CSI 500)
-and merges them into a single file as specified by the cn_index_path configuration.
+and saves them to separate files as specified by the configuration.
 
 CSI 300 (沪深300): Comprises the 300 largest and most liquid A-share stocks
 CSI 500 (中证500): Comprises the 500 medium-cap stocks (excluding CSI 300 constituents)
@@ -41,8 +41,10 @@ class CNIndexCollector:
 
     def __init__(self):
         """Initialize the CN index collector."""
-        self.cn_index_path = Path(settings.cn_index_path).expanduser()
-        self.cn_index_path.parent.mkdir(parents=True, exist_ok=True)
+        self.csi300_index_path = Path(settings.csi300_index_path).expanduser()
+        self.csi500_index_path = Path(settings.csi500_index_path).expanduser()
+        self.csi300_index_path.parent.mkdir(parents=True, exist_ok=True)
+        self.csi500_index_path.parent.mkdir(parents=True, exist_ok=True)
         # Use a persistent session with appropriate headers
         self.session = requests.Session()
         self.session.headers.update({
@@ -134,46 +136,56 @@ class CNIndexCollector:
         """
         return self._fetch_index_constituents("000905", "CSI 500 (中证500)")
 
-    def merge_and_save_symbols(self, csi300_df: pd.DataFrame, csi500_df: pd.DataFrame) -> None:
-        """Merge CSI 300 and CSI 500 DataFrames and save to configured file.
+    def _save_index_symbols(self, df: pd.DataFrame, output_path: Path, index_name: str) -> None:
+        """Save index symbols to a file.
 
         Args:
-            csi300_df: DataFrame with CSI 300 symbols and their addition dates
-            csi500_df: DataFrame with CSI 500 symbols and their addition dates
+            df: DataFrame with symbols and their addition dates
+            output_path: Path to save the file
+            index_name: Index name for logging
         """
-        # Combine both DataFrames
-        combined_df = pd.concat([csi300_df, csi500_df], ignore_index=True)
-
-        # Remove duplicates, keeping the first occurrence
-        combined_df = combined_df.drop_duplicates(subset=['symbol'], keep='first')
-
         # Sort alphabetically by symbol
-        combined_df = combined_df.sort_values('symbol').reset_index(drop=True)
+        df = df.sort_values('symbol').reset_index(drop=True)
 
         # Add end_date column
-        combined_df['end_date'] = "2099-12-31"
+        df['end_date'] = "2099-12-31"
 
         # Ensure column order is correct
-        combined_df = combined_df[['symbol', 'date_added', 'end_date']]
-
-        logger.info(f"Total unique symbols after merge: {len(combined_df)} (CSI300: {len(csi300_df)}, CSI500: {len(csi500_df)})")
+        df = df[['symbol', 'date_added', 'end_date']]
 
         # Save to file in tab-separated format: symbol \t start_date \t end_date
-        combined_df.to_csv(self.cn_index_path, sep='\t', header=False, index=False)
+        df.to_csv(output_path, sep='\t', header=False, index=False)
 
-        logger.info(f"Saved merged CN index symbols to: {self.cn_index_path}")
+        logger.info(f"Saved {len(df)} {index_name} symbols to: {output_path}")
+
+    def save_csi300_symbols(self, df: pd.DataFrame) -> None:
+        """Save CSI 300 symbols to the configured file.
+
+        Args:
+            df: DataFrame with CSI 300 symbols and their addition dates
+        """
+        self._save_index_symbols(df, self.csi300_index_path, "CSI 300")
+
+    def save_csi500_symbols(self, df: pd.DataFrame) -> None:
+        """Save CSI 500 symbols to the configured file.
+
+        Args:
+            df: DataFrame with CSI 500 symbols and their addition dates
+        """
+        self._save_index_symbols(df, self.csi500_index_path, "CSI 500")
 
     def collect(self) -> None:
-        """Collect latest CN index constituents and save merged result."""
+        """Collect latest CN index constituents and save to separate files."""
         logger.info("Starting CN index collection...")
 
         try:
-            # Fetch symbols with dates from both indices
+            # Fetch and save CSI 300 symbols
             csi300_df = self.get_csi300_symbols_with_dates()
-            csi500_df = self.get_csi500_symbols_with_dates()
+            self.save_csi300_symbols(csi300_df)
 
-            # Merge and save
-            self.merge_and_save_symbols(csi300_df, csi500_df)
+            # Fetch and save CSI 500 symbols
+            csi500_df = self.get_csi500_symbols_with_dates()
+            self.save_csi500_symbols(csi500_df)
 
             logger.info("CN index collection completed successfully!")
 

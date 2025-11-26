@@ -14,19 +14,23 @@ class TestCNIndexCollector:
     def collector(self, tmp_path):
         """Create a CNIndexCollector with a temporary output path."""
         with patch('collectors.cn_index.collector.settings') as mock_settings:
-            mock_settings.cn_index_path = str(tmp_path / "cn_index.txt")
+            mock_settings.csi300_index_path = str(tmp_path / "csi300.txt")
+            mock_settings.csi500_index_path = str(tmp_path / "csi500.txt")
             collector = CNIndexCollector()
             return collector
 
     def test_init_creates_parent_directory(self, tmp_path):
-        """Test that __init__ creates parent directory for index file."""
+        """Test that __init__ creates parent directory for index files."""
         with patch('collectors.cn_index.collector.settings') as mock_settings:
-            nested_path = tmp_path / "nested" / "dir" / "cn_index.txt"
-            mock_settings.cn_index_path = str(nested_path)
+            nested_path_300 = tmp_path / "nested" / "dir" / "csi300.txt"
+            nested_path_500 = tmp_path / "nested" / "dir" / "csi500.txt"
+            mock_settings.csi300_index_path = str(nested_path_300)
+            mock_settings.csi500_index_path = str(nested_path_500)
             
             collector = CNIndexCollector()
             
-            assert nested_path.parent.exists()
+            assert nested_path_300.parent.exists()
+            assert nested_path_500.parent.exists()
 
     def test_get_csi300_symbols_with_dates(self, collector):
         """Test fetching CSI 300 symbols with dates."""
@@ -85,7 +89,8 @@ class TestCNIndexCollector:
         with patch('collectors.cn_index.collector.settings') as mock_settings, \
              patch('collectors.cn_index.collector.time.sleep'):
             
-            mock_settings.cn_index_path = str(tmp_path / "cn_index.txt")
+            mock_settings.csi300_index_path = str(tmp_path / "csi300.txt")
+            mock_settings.csi500_index_path = str(tmp_path / "csi500.txt")
             collector = CNIndexCollector()
             
             # First call fails, second succeeds
@@ -107,26 +112,22 @@ class TestCNIndexCollector:
             assert len(result) == 1
             assert collector.session.get.call_count == 2
 
-    def test_merge_and_save_symbols(self, tmp_path):
-        """Test merging and saving symbols from both indices."""
+    def test_save_csi300_symbols(self, tmp_path):
+        """Test saving CSI 300 symbols to file."""
         with patch('collectors.cn_index.collector.settings') as mock_settings:
-            output_path = tmp_path / "cn_index.txt"
-            mock_settings.cn_index_path = str(output_path)
+            output_path = tmp_path / "csi300.txt"
+            mock_settings.csi300_index_path = str(output_path)
+            mock_settings.csi500_index_path = str(tmp_path / "csi500.txt")
             
             collector = CNIndexCollector()
             
-            # Create sample DataFrames
+            # Create sample DataFrame
             csi300_df = pd.DataFrame({
                 'symbol': ['600000.SS', '600016.SS', '000001.SZ'],
                 'date_added': ['2005-01-01', '2005-01-01', '2005-01-01']
             })
             
-            csi500_df = pd.DataFrame({
-                'symbol': ['600100.SS', '300059.SZ', '600000.SS'],  # 600000.SS is duplicate
-                'date_added': ['2005-01-01', '2005-01-01', '2005-01-01']
-            })
-            
-            collector.merge_and_save_symbols(csi300_df, csi500_df)
+            collector.save_csi300_symbols(csi300_df)
             
             # Verify file was created
             assert output_path.exists()
@@ -135,48 +136,46 @@ class TestCNIndexCollector:
             content = output_path.read_text()
             lines = [l for l in content.split('\n') if l.strip()]
             
-            # Should have 5 unique symbols (600000.SS deduplicated)
-            assert len(lines) == 5
+            assert len(lines) == 3
             
             # Verify format: symbol \t start_date \t end_date
             first_line = lines[0].split('\t')
             assert len(first_line) == 3
             assert first_line[2] == '2099-12-31'  # end_date
 
-    def test_merge_removes_duplicates(self, tmp_path):
-        """Test that merge removes duplicate symbols."""
+    def test_save_csi500_symbols(self, tmp_path):
+        """Test saving CSI 500 symbols to file."""
         with patch('collectors.cn_index.collector.settings') as mock_settings:
-            output_path = tmp_path / "cn_index.txt"
-            mock_settings.cn_index_path = str(output_path)
+            output_path = tmp_path / "csi500.txt"
+            mock_settings.csi300_index_path = str(tmp_path / "csi300.txt")
+            mock_settings.csi500_index_path = str(output_path)
             
             collector = CNIndexCollector()
             
-            csi300_df = pd.DataFrame({
-                'symbol': ['600000.SS', '600016.SS'],
-                'date_added': ['2005-01-01', '2005-01-01']
-            })
-            
-            # Same symbol in CSI500
+            # Create sample DataFrame
             csi500_df = pd.DataFrame({
-                'symbol': ['600000.SS', '600100.SS'],
+                'symbol': ['600100.SS', '300059.SZ'],
                 'date_added': ['2005-01-01', '2005-01-01']
             })
             
-            collector.merge_and_save_symbols(csi300_df, csi500_df)
+            collector.save_csi500_symbols(csi500_df)
             
+            # Verify file was created
+            assert output_path.exists()
+            
+            # Read and verify content
             content = output_path.read_text()
             lines = [l for l in content.split('\n') if l.strip()]
             
-            # 600000.SS should appear only once
-            symbols = [l.split('\t')[0] for l in lines]
-            assert symbols.count('600000.SS') == 1
-            assert len(lines) == 3  # 3 unique symbols
+            assert len(lines) == 2
 
-    def test_collect_calls_all_methods(self, tmp_path):
-        """Test that collect method calls all required methods."""
+    def test_collect_saves_separate_files(self, tmp_path):
+        """Test that collect method saves CSI 300 and CSI 500 to separate files."""
         with patch('collectors.cn_index.collector.settings') as mock_settings:
-            output_path = tmp_path / "cn_index.txt"
-            mock_settings.cn_index_path = str(output_path)
+            csi300_path = tmp_path / "csi300.txt"
+            csi500_path = tmp_path / "csi500.txt"
+            mock_settings.csi300_index_path = str(csi300_path)
+            mock_settings.csi500_index_path = str(csi500_path)
             
             collector = CNIndexCollector()
             
@@ -187,8 +186,8 @@ class TestCNIndexCollector:
             })
             
             csi500_df = pd.DataFrame({
-                'symbol': ['600100.SS'],
-                'date_added': ['2005-01-01']
+                'symbol': ['600100.SS', '300059.SZ'],
+                'date_added': ['2005-01-01', '2005-01-01']
             })
             
             collector.get_csi300_symbols_with_dates = MagicMock(return_value=csi300_df)
@@ -198,13 +197,24 @@ class TestCNIndexCollector:
             
             collector.get_csi300_symbols_with_dates.assert_called_once()
             collector.get_csi500_symbols_with_dates.assert_called_once()
-            assert output_path.exists()
+            
+            # Verify both files were created
+            assert csi300_path.exists()
+            assert csi500_path.exists()
+            
+            # Verify CSI 300 file content
+            csi300_lines = [l for l in csi300_path.read_text().split('\n') if l.strip()]
+            assert len(csi300_lines) == 2
+            
+            # Verify CSI 500 file content
+            csi500_lines = [l for l in csi500_path.read_text().split('\n') if l.strip()]
+            assert len(csi500_lines) == 2
 
     def test_collect_raises_on_error(self, tmp_path):
         """Test that collect raises exception on error."""
         with patch('collectors.cn_index.collector.settings') as mock_settings:
-            output_path = tmp_path / "cn_index.txt"
-            mock_settings.cn_index_path = str(output_path)
+            mock_settings.csi300_index_path = str(tmp_path / "csi300.txt")
+            mock_settings.csi500_index_path = str(tmp_path / "csi500.txt")
             
             collector = CNIndexCollector()
             
@@ -247,7 +257,8 @@ class TestCollectCNIndex:
         with patch('collectors.cn_index.collector.settings') as mock_settings, \
              patch.object(CNIndexCollector, 'collect') as mock_collect:
             
-            mock_settings.cn_index_path = str(tmp_path / "cn_index.txt")
+            mock_settings.csi300_index_path = str(tmp_path / "csi300.txt")
+            mock_settings.csi500_index_path = str(tmp_path / "csi500.txt")
             
             from collectors.cn_index import collect_cn_index
             collect_cn_index()

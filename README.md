@@ -124,7 +124,8 @@ data/
 │   └── cn.txt         # A 股交易日历
 ├── instruments/        # 股票指数成分股
 │   ├── us.txt         # 美股指数成分股（S&P 500 + NASDAQ 100）
-│   └── cn.txt         # A 股指数成分股（沪深 300 + 中证 500）
+│   ├── csi300.txt     # 沪深 300 成分股
+│   └── csi500.txt     # 中证 500 成分股
 ├── stock_data/         # 原始股票数据
 │   └── us_data/       # 美股原始数据
 │       ├── AAPL.csv
@@ -294,7 +295,7 @@ from collectors.cn_calendar import collect_cn_calendar
 # 更新美股指数成分股
 collect_us_index()
 
-# 更新 A 股指数成分股
+# 更新 A 股指数成分股（保存为 csi300.txt 和 csi500.txt）
 collect_cn_index()
 
 # 更新美股交易日历
