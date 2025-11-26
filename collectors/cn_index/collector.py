@@ -20,11 +20,11 @@ from config import settings
 class CNIndexCollector:
     """Collector for Chinese stock index constituents (CSI 300 and CSI 500)."""
 
-    # CSI Index API endpoints (using data.eastmoney.com)
+    # CSI Index API endpoint (using Eastmoney API)
+    # The same endpoint is used for both indices, differentiated by the 'fs' parameter
     # CSI 300 index code: 000300
     # CSI 500 index code: 000905
-    CSI300_API_URL = "https://push2.eastmoney.com/api/qt/clist/get"
-    CSI500_API_URL = "https://push2.eastmoney.com/api/qt/clist/get"
+    API_URL = "https://push2.eastmoney.com/api/qt/clist/get"
     
     # Default parameters for API requests
     DEFAULT_PARAMS = {
@@ -73,7 +73,7 @@ class CNIndexCollector:
                 # fs parameter format: b:index_code for index constituents
                 params["fs"] = f"b:{index_code}"
                 
-                resp = self.session.get(self.CSI300_API_URL, params=params, timeout=30)
+                resp = self.session.get(self.API_URL, params=params, timeout=30)
                 resp.raise_for_status()
                 
                 data = resp.json()

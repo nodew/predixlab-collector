@@ -160,6 +160,7 @@ class QStockMarketDataService:
             logger.info("✅ US index collection completed successfully!")
         except Exception as e:
             logger.error(f"❌ US index collection failed: {e}")
+            raise
 
     def collect_cn_index(self) -> None:
         """Collect CN index constituents (CSI 300 + CSI 500).
@@ -173,6 +174,7 @@ class QStockMarketDataService:
             logger.info("✅ CN index collection completed successfully!")
         except Exception as e:
             logger.error(f"❌ CN index collection failed: {e}")
+            raise
 
     def collect_us_calendar(self, start_date: str = "2015-01-01", interval: str = "1d"):
         """Collect US stock trading calendar dates.
