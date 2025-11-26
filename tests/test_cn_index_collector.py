@@ -92,11 +92,11 @@ class TestCNIndexCollector:
         assert isinstance(result, pd.DataFrame)
         assert 'symbol' in result.columns
         assert len(result) == 3
-        # Check Shanghai symbols end with .SS
-        assert '600000.SS' in result['symbol'].values
-        assert '600016.SS' in result['symbol'].values
-        # Check Shenzhen symbols end with .SZ
-        assert '000001.SZ' in result['symbol'].values
+        # Check Shanghai symbols start with SH
+        assert 'SH600000' in result['symbol'].values
+        assert 'SH600016' in result['symbol'].values
+        # Check Shenzhen symbols start with SZ
+        assert 'SZ000001' in result['symbol'].values
 
     def test_fetch_csi500_constituents(self, csi500_collector):
         """Test fetching CSI 500 symbols."""
@@ -159,7 +159,7 @@ class TestCNIndexCollector:
             
             # Create sample DataFrame
             df = pd.DataFrame({
-                'symbol': ['600000.SS', '600016.SS', '000001.SZ']
+                'symbol': ['SH600000', 'SH600016', 'SZ000001']
             })
             
             collector._save_symbols(df)
@@ -173,9 +173,9 @@ class TestCNIndexCollector:
             
             assert len(lines) == 3
             # Verify sorted order
-            assert lines[0] == '000001.SZ'
-            assert lines[1] == '600000.SS'
-            assert lines[2] == '600016.SS'
+            assert lines[0] == 'SH600000'
+            assert lines[1] == 'SH600016'
+            assert lines[2] == 'SZ000001'
 
     def test_collect_csi300(self, tmp_path):
         """Test that collect method saves CSI 300 to file."""
@@ -188,7 +188,7 @@ class TestCNIndexCollector:
             
             # Mock the data fetching method
             df = pd.DataFrame({
-                'symbol': ['600000.SS', '600016.SS']
+                'symbol': ['SH600000', 'SH600016']
             })
             
             collector._fetch_index_constituents = MagicMock(return_value=df)
@@ -215,7 +215,7 @@ class TestCNIndexCollector:
             
             # Mock the data fetching method
             df = pd.DataFrame({
-                'symbol': ['600100.SS', '300059.SZ']
+                'symbol': ['SH600100', 'SZ300059']
             })
             
             collector._fetch_index_constituents = MagicMock(return_value=df)
@@ -247,15 +247,15 @@ class TestCNIndexCollector:
             with pytest.raises(Exception, match="Network error"):
                 collector.collect()
 
-    def test_symbol_exchange_suffix(self, csi300_collector):
-        """Test that correct exchange suffix is assigned."""
+    def test_symbol_exchange_prefix(self, csi300_collector):
+        """Test that correct exchange prefix is assigned."""
         mock_response = MagicMock()
         mock_response.json.return_value = {
             "data": {
                 "diff": [
-                    {"f12": "600000", "f14": "Shanghai Stock"},  # 6xx -> .SS
-                    {"f12": "000001", "f14": "Shenzhen Stock"},  # 0xx -> .SZ
-                    {"f12": "300059", "f14": "ChiNext Stock"},   # 3xx -> .SZ
+                    {"f12": "600000", "f14": "Shanghai Stock"},  # 6xx -> SH
+                    {"f12": "000001", "f14": "Shenzhen Stock"},  # 0xx -> SZ
+                    {"f12": "300059", "f14": "ChiNext Stock"},   # 3xx -> SZ
                 ]
             }
         }
@@ -265,9 +265,9 @@ class TestCNIndexCollector:
         
         result = csi300_collector._fetch_index_constituents()
         
-        assert '600000.SS' in result['symbol'].values
-        assert '000001.SZ' in result['symbol'].values
-        assert '300059.SZ' in result['symbol'].values
+        assert 'SH600000' in result['symbol'].values
+        assert 'SZ000001' in result['symbol'].values
+        assert 'SZ300059' in result['symbol'].values
 
 
 class TestCollectCNIndex:

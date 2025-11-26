@@ -111,12 +111,12 @@ class CNIndexCollector:
                 for item in constituents:
                     code = item.get("f12", "")
                     if code:
-                        # Determine exchange suffix based on code
-                        # Codes starting with 6 are Shanghai (SS), starting with 0 or 3 are Shenzhen (SZ)
+                        # Determine exchange prefix based on code
+                        # Codes starting with 6 are Shanghai (SH), starting with 0 or 3 are Shenzhen (SZ)
                         if code.startswith("6"):
-                            symbol = f"{code}.SS"
+                            symbol = f"SH{code}"
                         else:
-                            symbol = f"{code}.SZ"
+                            symbol = f"SZ{code}"
                         symbols.append(symbol)
                 
                 # Create DataFrame with only symbol column (current active companies)
