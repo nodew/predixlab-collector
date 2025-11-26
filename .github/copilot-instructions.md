@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-This is a Python-based stock market data collection and processing service that collects US stock market data from Yahoo Finance and provides data normalization capabilities.
+This is a Python-based stock market data collection and processing service that collects US and Chinese stock market data from Yahoo Finance and Eastmoney, and provides data normalization capabilities.
 
 ## Technology Stack
 
@@ -20,7 +20,9 @@ This is a Python-based stock market data collection and processing service that 
 qstock-collector/
 ├── collectors/                 # Data collector modules
 │   ├── us_calendar/           # US trading calendar collector
-│   ├── us_index/              # US index component collector
+│   ├── cn_calendar/           # Chinese trading calendar collector
+│   ├── us_index/              # US index component collector (S&P 500 + NASDAQ 100)
+│   ├── cn_index/              # Chinese index component collector (CSI 300 + CSI 500)
 │   └── yahoo/                 # Yahoo Finance data collector and normalizer
 ├── tests/                     # Unit tests
 ├── config.py                  # Configuration settings
@@ -85,6 +87,18 @@ Handles downloading stock data from Yahoo Finance with batching and rate limitin
 
 ### collectors/yahoo/normalize.py
 Normalizes and standardizes collected stock data for analysis.
+
+### collectors/us_index/collector.py
+Collects S&P 500 and NASDAQ 100 index constituents from Wikipedia.
+
+### collectors/cn_index/collector.py
+Collects CSI 300 (沪深300) and CSI 500 (中证500) index constituents from Eastmoney.
+
+### collectors/us_calendar/collector.py
+Collects US trading calendar dates from Yahoo Finance.
+
+### collectors/cn_calendar/collector.py
+Collects Chinese trading calendar dates from Yahoo Finance.
 
 ### config.py
 Central configuration using pydantic-settings with environment variable support.

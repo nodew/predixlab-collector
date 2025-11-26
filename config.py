@@ -25,7 +25,8 @@ class Settings(BaseSettings):
     # Index paths
     index_dir: str = "data/instruments"
     us_index_path: str = "data/instruments/us.txt"
-    cn_index_path: str = "data/instruments/cn.txt"
+    csi300_index_path: str = "data/instruments/csi300.txt"
+    csi500_index_path: str = "data/instruments/csi500.txt"
 
     # Stock data paths
     stock_data_dir: str = "data/stock_data"
