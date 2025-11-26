@@ -66,7 +66,14 @@ python main.py collect_us_index
 
 #### 2. 更新 A 股指数成分股
 ```bash
+# 收集沪深 300 成分股（默认）
 python main.py collect_cn_index
+
+# 指定收集沪深 300 成分股
+python main.py collect_cn_index --index csi300
+
+# 收集中证 500 成分股
+python main.py collect_cn_index --index csi500
 ```
 
 #### 3. 更新美股交易日历
@@ -295,8 +302,13 @@ from collectors.cn_calendar import collect_cn_calendar
 # 更新美股指数成分股
 collect_us_index()
 
-# 更新 A 股指数成分股（保存为 csi300.txt 和 csi500.txt）
+# 更新 A 股指数成分股
+# 收集沪深 300（默认）
 collect_cn_index()
+# 收集沪深 300
+collect_cn_index(index="csi300")
+# 收集中证 500
+collect_cn_index(index="csi500")
 
 # 更新美股交易日历
 collect_us_calendar(start_date="2020-01-01")

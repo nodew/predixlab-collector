@@ -11,19 +11,31 @@ import pandas as pd
 import requests
 from pathlib import Path
 from loguru import logger
-from typing import List
+from typing import Literal
 import time
 
 from config import settings
+
+
+# Index configuration mapping
+INDEX_CONFIG = {
+    "csi300": {
+        "code": "000300",
+        "name": "CSI 300 (沪深300)",
+        "path_attr": "csi300_index_path",
+    },
+    "csi500": {
+        "code": "000905",
+        "name": "CSI 500 (中证500)",
+        "path_attr": "csi500_index_path",
+    },
+}
 
 
 class CNIndexCollector:
     """Collector for Chinese stock index constituents (CSI 300 and CSI 500)."""
 
     # CSI Index API endpoint (using Eastmoney API)
-    # The same endpoint is used for both indices, differentiated by the 'fs' parameter
-    # CSI 300 index code: 000300
-    # CSI 500 index code: 000905
     API_URL = "https://push2.eastmoney.com/api/qt/clist/get"
     
     # Default parameters for API requests
@@ -39,12 +51,20 @@ class CNIndexCollector:
         "fields": "f12,f14",  # fields: code, name
     }
 
-    def __init__(self):
-        """Initialize the CN index collector."""
-        self.csi300_index_path = Path(settings.csi300_index_path).expanduser()
-        self.csi500_index_path = Path(settings.csi500_index_path).expanduser()
-        self.csi300_index_path.parent.mkdir(parents=True, exist_ok=True)
-        self.csi500_index_path.parent.mkdir(parents=True, exist_ok=True)
+    def __init__(self, index: Literal["csi300", "csi500"] = "csi300"):
+        """Initialize the CN index collector.
+        
+        Args:
+            index: Index to collect, either "csi300" or "csi500". Defaults to "csi300".
+        """
+        if index not in INDEX_CONFIG:
+            raise ValueError(f"Invalid index '{index}'. Must be one of: {list(INDEX_CONFIG.keys())}")
+        
+        self.index = index
+        self.index_config = INDEX_CONFIG[index]
+        self.index_path = Path(getattr(settings, self.index_config["path_attr"])).expanduser()
+        self.index_path.parent.mkdir(parents=True, exist_ok=True)
+        
         # Use a persistent session with appropriate headers
         self.session = requests.Session()
         self.session.headers.update({
@@ -54,16 +74,14 @@ class CNIndexCollector:
             "Referer": "https://quote.eastmoney.com/",
         })
 
-    def _fetch_index_constituents(self, index_code: str, index_name: str) -> pd.DataFrame:
+    def _fetch_index_constituents(self) -> pd.DataFrame:
         """Fetch index constituents from Eastmoney API.
 
-        Args:
-            index_code: Index code (e.g., "000300" for CSI 300)
-            index_name: Index name for logging
-
         Returns:
-            DataFrame with columns: symbol, date_added
+            DataFrame with columns: symbol
         """
+        index_code = self.index_config["code"]
+        index_name = self.index_config["name"]
         logger.info(f"Fetching {index_name} (code: {index_code}) constituents...")
 
         max_retries = 3
@@ -88,7 +106,7 @@ class CNIndexCollector:
                 if not constituents:
                     raise ValueError(f"Empty constituents list for {index_name}")
                 
-                # Parse constituents
+                # Parse constituents - only save current active companies
                 symbols = []
                 for item in constituents:
                     code = item.get("f12", "")
@@ -101,11 +119,8 @@ class CNIndexCollector:
                             symbol = f"{code}.SZ"
                         symbols.append(symbol)
                 
-                # Create DataFrame
-                df = pd.DataFrame({
-                    "symbol": symbols,
-                    "date_added": "2005-01-01"  # Default date for Chinese indices
-                })
+                # Create DataFrame with only symbol column (current active companies)
+                df = pd.DataFrame({"symbol": symbols})
                 
                 logger.info(f"Found {len(df)} {index_name} constituents")
                 return df
@@ -120,83 +135,48 @@ class CNIndexCollector:
                     logger.error(f"Failed to fetch {index_name} after {max_retries + 1} attempts: {e}")
                     raise
 
-    def get_csi300_symbols_with_dates(self) -> pd.DataFrame:
-        """Get current CSI 300 (沪深300) constituents with their addition dates.
-
-        Returns:
-            DataFrame with columns: symbol, date_added
-        """
-        return self._fetch_index_constituents("000300", "CSI 300 (沪深300)")
-
-    def get_csi500_symbols_with_dates(self) -> pd.DataFrame:
-        """Get current CSI 500 (中证500) constituents with their addition dates.
-
-        Returns:
-            DataFrame with columns: symbol, date_added
-        """
-        return self._fetch_index_constituents("000905", "CSI 500 (中证500)")
-
-    def _save_index_symbols(self, df: pd.DataFrame, output_path: Path, index_name: str) -> None:
-        """Save index symbols to a file.
+    def _save_symbols(self, df: pd.DataFrame) -> None:
+        """Save index symbols to the configured file.
 
         Args:
-            df: DataFrame with symbols and their addition dates
-            output_path: Path to save the file
-            index_name: Index name for logging
+            df: DataFrame with symbols
         """
+        index_name = self.index_config["name"]
+        
         # Sort alphabetically by symbol
         df = df.sort_values('symbol').reset_index(drop=True)
 
-        # Add end_date column
-        df['end_date'] = "2099-12-31"
+        # Save to file - one symbol per line
+        with open(self.index_path, 'w', encoding='utf-8') as f:
+            for symbol in df['symbol']:
+                f.write(f"{symbol}\n")
 
-        # Ensure column order is correct
-        df = df[['symbol', 'date_added', 'end_date']]
-
-        # Save to file in tab-separated format: symbol \t start_date \t end_date
-        df.to_csv(output_path, sep='\t', header=False, index=False)
-
-        logger.info(f"Saved {len(df)} {index_name} symbols to: {output_path}")
-
-    def save_csi300_symbols(self, df: pd.DataFrame) -> None:
-        """Save CSI 300 symbols to the configured file.
-
-        Args:
-            df: DataFrame with CSI 300 symbols and their addition dates
-        """
-        self._save_index_symbols(df, self.csi300_index_path, "CSI 300")
-
-    def save_csi500_symbols(self, df: pd.DataFrame) -> None:
-        """Save CSI 500 symbols to the configured file.
-
-        Args:
-            df: DataFrame with CSI 500 symbols and their addition dates
-        """
-        self._save_index_symbols(df, self.csi500_index_path, "CSI 500")
+        logger.info(f"Saved {len(df)} {index_name} symbols to: {self.index_path}")
 
     def collect(self) -> None:
-        """Collect latest CN index constituents and save to separate files."""
-        logger.info("Starting CN index collection...")
+        """Collect latest CN index constituents and save to file."""
+        index_name = self.index_config["name"]
+        logger.info(f"Starting {index_name} collection...")
 
         try:
-            # Fetch and save CSI 300 symbols
-            csi300_df = self.get_csi300_symbols_with_dates()
-            self.save_csi300_symbols(csi300_df)
+            # Fetch and save symbols for the specified index
+            df = self._fetch_index_constituents()
+            self._save_symbols(df)
 
-            # Fetch and save CSI 500 symbols
-            csi500_df = self.get_csi500_symbols_with_dates()
-            self.save_csi500_symbols(csi500_df)
-
-            logger.info("CN index collection completed successfully!")
+            logger.info(f"{index_name} collection completed successfully!")
 
         except Exception as e:
             logger.error(f"CN index collection failed: {e}")
             raise
 
 
-def collect_cn_index():
-    """Main entry point for CN index collection."""
-    collector = CNIndexCollector()
+def collect_cn_index(index: Literal["csi300", "csi500"] = "csi300"):
+    """Main entry point for CN index collection.
+    
+    Args:
+        index: Index to collect, either "csi300" or "csi500". Defaults to "csi300".
+    """
+    collector = CNIndexCollector(index=index)
     collector.collect()
 
 

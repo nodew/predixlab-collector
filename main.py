@@ -162,18 +162,23 @@ class QStockMarketDataService:
             logger.error(f"❌ US index collection failed: {e}")
             raise
 
-    def collect_cn_index(self) -> None:
-        """Collect CN index constituents (CSI 300 + CSI 500).
+    def collect_cn_index(self, index: str = "csi300") -> None:
+        """Collect CN index constituents (CSI 300 or CSI 500).
 
-        This method fetches the latest constituents of CSI 300 (沪深300) and CSI 500 (中证500)
-        indices from Eastmoney, merges them, and saves to the configured cn_index_path.
+        This method fetches the latest constituents of the specified Chinese stock index
+        from Eastmoney and saves to the configured path.
+
+        Parameters
+        ----------
+        index : str, optional
+            Index to collect, either "csi300" or "csi500". Defaults to "csi300".
         """
-        logger.info("Starting CN index collection...")
+        logger.info(f"Starting CN index ({index}) collection...")
         try:
-            collect_cn_index()
-            logger.info("✅ CN index collection completed successfully!")
+            collect_cn_index(index=index)
+            logger.info(f"✅ CN index ({index}) collection completed successfully!")
         except Exception as e:
-            logger.error(f"❌ CN index collection failed: {e}")
+            logger.error(f"❌ CN index ({index}) collection failed: {e}")
             raise
 
     def collect_us_calendar(self, start_date: str = "2015-01-01", interval: str = "1d"):
