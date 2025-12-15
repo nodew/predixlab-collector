@@ -1,7 +1,7 @@
 [project]
 name = "qstock-collector"
 version = "0.1.0"
-description = "Independent stock market data service using yfinance and Yahoo Query - extracted from qstock"
+description = "Independent stock market data service using Yahoo Finance via market-prices - extracted from qstock"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -16,7 +16,7 @@ dependencies = [
     "requests>=2.32.4",
     "soupsieve>=2.7",
     "tqdm>=4.67.1",
-    "yahooquery>=2.4.1",
+    "market-prices>=0.12.11",
     "python-dateutil>=2.8.2",
     "pydantic-settings>=2.10.1",
     "pymongo>=4.10.1",

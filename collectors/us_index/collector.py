@@ -9,7 +9,7 @@ import requests
 from io import StringIO
 from pathlib import Path
 from loguru import logger
-from typing import List
+from typing import cast
 
 from config import settings
 
@@ -51,22 +51,24 @@ class USIndexCollector:
             df_list = pd.read_html(StringIO(resp.text))
 
             # Find the main constituents table with Symbol and Date added columns
-            for df in df_list:
+            for raw_df in df_list:
+                df = cast(pd.DataFrame, raw_df)
                 if "Symbol" in df.columns and "Date added" in df.columns:
                     # Clean the data
-                    df = df[["Symbol", "Date added"]].copy()
-                    df = df.dropna(subset=["Symbol"])
-                    df.columns = ["symbol", "date_added"]
+                    df2: pd.DataFrame = df.loc[:, ["Symbol", "Date added"]].copy()
+                    symbol_series = cast(pd.Series, df2["Symbol"])
+                    df2 = df2.loc[symbol_series.notna()].copy()
+                    df2.columns = ["symbol", "date_added"]
 
                     # Convert date_added to standard format
-                    df["date_added"] = pd.to_datetime(df["date_added"], errors="coerce")
+                    df2["date_added"] = pd.to_datetime(df2["date_added"], errors="coerce")
 
                     # For symbols with missing dates, use a default early date
-                    df["date_added"] = df["date_added"].fillna(pd.Timestamp("1999-01-01"))
-                    df["date_added"] = df["date_added"].dt.strftime("%Y-%m-%d")
+                    df2["date_added"] = df2["date_added"].fillna(pd.Timestamp("1999-01-01"))
+                    df2["date_added"] = df2["date_added"].dt.strftime("%Y-%m-%d")
 
-                    logger.info(f"Found {len(df)} SP500 symbols with dates")
-                    return df
+                    logger.info(f"Found {len(df2)} SP500 symbols with dates")
+                    return df2
 
             raise ValueError("Could not find SP500 symbols table with dates")
 
@@ -90,12 +92,14 @@ class USIndexCollector:
             df_list = pd.read_html(StringIO(resp.text))
 
             # Find the table with Ticker column (NASDAQ100 uses "Ticker" instead of "Symbol")
-            for df in df_list:
+            for raw_df in df_list:
+                df = cast(pd.DataFrame, raw_df)
                 if "Ticker" in df.columns and len(df) >= 100:
                     # For NASDAQ100, we may not always have date information in the main table
                     # Use a default date for all NASDAQ100 symbols
-                    df_result = df[["Ticker"]].copy()
-                    df_result = df_result.dropna(subset=["Ticker"])
+                    df_result: pd.DataFrame = df.loc[:, ["Ticker"]].copy()
+                    ticker_series = cast(pd.Series, df_result["Ticker"])
+                    df_result = df_result.loc[ticker_series.notna()].copy()
                     df_result.columns = ["symbol"]
                     df_result["date_added"] = "2003-01-02"  # Default NASDAQ100 start date
 
@@ -119,24 +123,24 @@ class USIndexCollector:
         combined_df = pd.concat([sp500_df, nasdaq100_df], ignore_index=True)
 
         # Replace dots with hyphens in symbols (e.g., BRK.B -> BRK-B)
-        combined_df['symbol'] = combined_df['symbol'].str.replace('.', '-', regex=False)
+        combined_df["symbol"] = combined_df["symbol"].str.replace(".", "-", regex=False)
 
         # Remove duplicates, keeping the first occurrence (which will have the earlier date)
-        combined_df = combined_df.drop_duplicates(subset=['symbol'], keep='first')
+        combined_df = combined_df.drop_duplicates(subset=["symbol"], keep="first")
 
         # Sort alphabetically by symbol
-        combined_df = combined_df.sort_values('symbol').reset_index(drop=True)
+        combined_df = combined_df.sort_values("symbol").reset_index(drop=True)
 
         # Add end_date column
-        combined_df['end_date'] = "2099-12-31"
+        combined_df["end_date"] = "2099-12-31"
 
         # Ensure column order is correct
-        combined_df = combined_df[['symbol', 'date_added', 'end_date']]
+        combined_df = combined_df[["symbol", "date_added", "end_date"]]
 
         logger.info(f"Total unique symbols after merge: {len(combined_df)} (SP500: {len(sp500_df)}, NASDAQ100: {len(nasdaq100_df)})")
 
         # Save to file in tab-separated format: symbol \t start_date \t end_date
-        combined_df.to_csv(self.us_index_path, sep='\t', header=False, index=False)
+        combined_df.to_csv(self.us_index_path, sep="\t", header=False, index=False)
 
         logger.info(f"Saved merged US index symbols to: {self.us_index_path}")
 
