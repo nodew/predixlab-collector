@@ -1,7 +1,7 @@
 """US Calendar collector module.
 
 This module collects US stock trading calendar dates from 2015-01-01 to current date
-using Yahoo Finance data through yahooquery, and saves them to the configured file.
+using Yahoo Finance data through market-prices, and saves them to the configured file.
 """
 
 import pandas as pd
@@ -10,7 +10,7 @@ from pathlib import Path
 from loguru import logger
 from typing import List
 import time
-from yahooquery import Ticker
+from market_prices import PricesYahoo
 
 from config import settings
 from utils import normalize_datetime_to_date
@@ -55,7 +55,7 @@ class USCalendarCollector:
     def get_us_trading_dates(self) -> List[pd.Timestamp]:
         """Get US stock trading dates from start_date to current date using Yahoo Finance.
 
-        Uses retry mechanism with exponential backoff (max 3 retries) for yahooquery calls.
+        Uses retry mechanism with exponential backoff (max 3 retries) for market-prices calls.
 
         Returns:
             List of trading dates as pandas Timestamps
@@ -67,28 +67,40 @@ class USCalendarCollector:
 
         for attempt in range(max_retries + 1):
             try:
-                # Use Yahoo Finance to get historical data for S&P 500 index
-                ticker = Ticker(self.reference_symbol)
+                prices = PricesYahoo(self.reference_symbol, delays=0)
 
-                # Get historical data with maximum period to cover from start_date
-                hist_data = ticker.history(
-                    interval=self.interval,
-                    start=self.start_date,
-                    end=self.end_date
-                )
-
+                # market-prices uses "1D" for daily bars. For weekly/monthly calendars
+                # we derive period markers from daily trading dates to keep the existing
+                # downstream expectations stable.
+                hist_data = prices.get("1D", start=self.start_date, end=self.end_date)
                 if hist_data is None or hist_data.empty:
                     raise ValueError(f"No data received for symbol {self.reference_symbol}")
 
-                # Extract trading dates from the index
-                if isinstance(hist_data.index, pd.MultiIndex):
-                    # If MultiIndex (symbol, date), get level 1 (date)
-                    trading_dates = hist_data.index.get_level_values(level="date").unique()
-                else:
-                    # If single index (date)
-                    trading_dates = hist_data.index
+                # Extract trading dates from the index (handle IntervalIndex just in case)
+                idx = hist_data.index.left if isinstance(hist_data.index, pd.IntervalIndex) else hist_data.index
+                daily_dates = sorted({normalize_datetime_to_date(d) for d in pd.to_datetime(idx)})
 
-                trading_dates = [normalize_datetime_to_date(date) for date in trading_dates]
+                if self.interval == "1d":
+                    trading_dates = daily_dates
+                elif self.interval == "1wk":
+                    # Monday-anchored weekly markers
+                    week_starts = {d - timedelta(days=d.weekday()) for d in daily_dates}
+                    trading_dates = sorted(week_starts)
+                elif self.interval == "1mo":
+                    # Last trading day of each completed month
+                    last_by_month = {}
+                    for d in daily_dates:
+                        key = (d.year, d.month)
+                        last_by_month[key] = max(last_by_month.get(key, d), d)
+
+                    # Exclude current (incomplete) month
+                    today = date.today()
+                    current_key = (today.year, today.month)
+                    last_by_month.pop(current_key, None)
+                    trading_dates = sorted(last_by_month.values())
+                else:
+                    # Fallback: treat as daily
+                    trading_dates = daily_dates
 
                 if (self.interval == "1wk"):
                     today = date.today()

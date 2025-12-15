@@ -1,6 +1,6 @@
 """Yahoo Finance data collector for US stocks.
 This collector handles downloading, updating, and validating stock data
-from Yahoo Finance using the yahooquery library. It supports both full history
+from Yahoo Finance using the market-prices library. It supports both full history
 and incremental updates, with robust error handling and anomaly detection.
 """
 
@@ -13,7 +13,7 @@ from typing import Optional, List, Tuple
 from datetime import date, datetime, timedelta
 import time
 import requests
-from yahooquery import Ticker
+from market_prices import PricesYahoo
 from dateutil.tz import tzlocal
 
 from config import settings
@@ -164,6 +164,72 @@ class YahooCollector:
 
         return filtered_data
 
+    @staticmethod
+    def _mp_extract_symbol_ohlcv(raw: pd.DataFrame, symbol: str) -> pd.DataFrame:
+        """Extract a single-symbol OHLCV table from a market-prices result.
+
+        The `market_prices.PricesYahoo.get` method can return a DataFrame with:
+        - MultiIndex columns (symbol, field) for one or more symbols
+        - DatetimeIndex or IntervalIndex index (depending on interval)
+
+        Returns a DataFrame with columns: date, open, high, low, close, volume, symbol.
+        """
+        if raw is None or raw.empty:
+            return pd.DataFrame()
+
+        df = raw
+
+        # If columns are MultiIndex, slice out the requested symbol.
+        if isinstance(df.columns, pd.MultiIndex):
+            try:
+                df = df.xs(symbol, axis=1, level=0, drop_level=True)
+            except KeyError:
+                # Some outputs may include whitespace-normalized symbols.
+                if symbol in df.columns.get_level_values(0):
+                    df = df[symbol]
+                else:
+                    return pd.DataFrame()
+
+        df = df.copy()
+        df.columns = [c.lower() if isinstance(c, str) else c for c in df.columns]
+
+        if isinstance(df.index, pd.IntervalIndex):
+            date_index = df.index.left
+        else:
+            date_index = df.index
+
+        out = df.reset_index(drop=True)
+        out.insert(0, "date", pd.to_datetime(date_index))
+        out["symbol"] = symbol
+
+        keep_cols = ["date", "open", "high", "low", "close", "volume", "symbol"]
+        missing = [c for c in keep_cols if c not in out.columns]
+        if missing:
+            return pd.DataFrame()
+
+        return out[keep_cols]
+
+    @staticmethod
+    def _aggregate_weekly(df: pd.DataFrame) -> pd.DataFrame:
+        """Aggregate daily rows to Monday-anchored weekly OHLCV rows."""
+        if df.empty:
+            return df
+
+        df_sorted = df.sort_values("date")
+        dt = pd.to_datetime(df_sorted["date"])
+        week_start = (dt - pd.to_timedelta(dt.dt.weekday, unit="D")).dt.normalize()
+
+        grouped = df_sorted.assign(date=week_start).groupby("date", as_index=False)
+        weekly = grouped.agg(
+            open=("open", "first"),
+            high=("high", "max"),
+            low=("low", "min"),
+            close=("close", "last"),
+            volume=("volume", "sum"),
+        )
+        weekly["symbol"] = df_sorted["symbol"].iloc[0]
+        return weekly[["date", "open", "high", "low", "close", "volume", "symbol"]]
+
     def _get_data_from_yahoo(self, symbol: str, start: str, end: str) -> Optional[pd.DataFrame]:
         """Get stock data from Yahoo Finance.
 
@@ -185,27 +251,14 @@ class YahooCollector:
             try:
                 time.sleep(self.delay)
 
-                ticker = Ticker(symbol, asynchronous=False)
-                data = ticker.history(interval=self.interval, start=start, end=end)
-                filtered_data = None
+                prices = PricesYahoo(symbol, delays=0)
+                raw = prices.get("1D", start=start, end=end)
 
-                if isinstance(data, pd.DataFrame) and not data.empty:
-                    # Reset index to get date as column
-                    data = data.reset_index()
+                data = self._mp_extract_symbol_ohlcv(raw, symbol)
+                if self.interval == "1wk":
+                    data = self._aggregate_weekly(data)
 
-                    # Add symbol column if not present
-                    if 'symbol' not in data.columns:
-                        data['symbol'] = symbol
-
-                    filtered_data = self._normalize_and_filter_data(data)
-
-                elif isinstance(data, dict) and symbol in data:
-                    # Handle case where data is returned as dict
-                    symbol_data = data[symbol]
-                    if isinstance(symbol_data, pd.DataFrame) and not symbol_data.empty:
-                        symbol_data = symbol_data.reset_index()
-                        symbol_data['symbol'] = symbol
-                        filtered_data = self._normalize_and_filter_data(symbol_data)
+                filtered_data = self._normalize_and_filter_data(data)
 
                 if filtered_data is not None and not filtered_data.empty:
                     return filtered_data
@@ -571,25 +624,21 @@ class YahooCollector:
             try:
                 time.sleep(self.delay)
 
-                # Use space-separated string for multiple symbols
-                symbols_str = " ".join(symbols)
-                ticker = Ticker(symbols_str, asynchronous=False)
-                data = ticker.history(interval=self.interval, start=start, end=end)
-                filtered_data = None
-                if isinstance(data, pd.DataFrame) and not data.empty:
-                    # Check if we have MultiIndex (symbol, date)
-                    if isinstance(data.index, pd.MultiIndex):
-                        # Reset MultiIndex to get symbol and date as columns
-                        data = data.reset_index()
+                symbols_str = ", ".join(symbols)
+                prices = PricesYahoo(symbols_str, delays=0)
+                raw = prices.get("1D", start=start, end=end)
 
-                        # Ensure required columns exist
-                        filtered_data = self._normalize_and_filter_data(data)
-                    else:
-                        # Single symbol case
-                        data = data.reset_index()
-                        if len(symbols) == 1:
-                            data['symbol'] = symbols[0]
-                            filtered_data = self._normalize_and_filter_data(data)
+                parts: List[pd.DataFrame] = []
+                for symbol in symbols:
+                    part = self._mp_extract_symbol_ohlcv(raw, symbol)
+                    if part.empty:
+                        continue
+                    if self.interval == "1wk":
+                        part = self._aggregate_weekly(part)
+                    parts.append(part)
+
+                combined = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
+                filtered_data = self._normalize_and_filter_data(combined)
 
                 if filtered_data is not None and not filtered_data.empty:
                     return filtered_data

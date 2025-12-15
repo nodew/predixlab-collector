@@ -1,6 +1,6 @@
 # QStock Collector
 
-一个专业的美股市场数据收集和处理服务，从 qstock 项目中提取并独立开发，使用 Yahoo Finance 和 yahooquery 进行高效的股票数据收集。
+一个专业的美股市场数据收集和处理服务，从 qstock 项目中提取并独立开发，使用 Yahoo Finance 和 market-prices 进行高效的股票数据收集。
 
 ## 🚀 功能特性
 
@@ -13,7 +13,7 @@
 - **异常检测**: 智能检测价格异常并自动修正
 
 ### 数据源
-- **Yahoo Finance**: 使用 yahooquery 库获取股票历史数据
+- **Yahoo Finance**: 使用 market-prices 库获取股票历史数据
 - **Wikipedia**: 获取 S&P 500 和 NASDAQ 100 最新成分股列表
 - **自动异常处理**: 检测和修正常见的数据异常（如价格单位错误等）
 
