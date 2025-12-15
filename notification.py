@@ -40,14 +40,14 @@ def send_email_notification(job_status: Dict[str, Any]) -> bool:
             return False
 
         # Prepare email content
-        status = job_status.get('status', 'unknown')
+        status = job_status.get("status", "unknown")
         # Separate internal name (job_name) and display name (job_display_name)
-        job_internal_name = job_status.get('job_name', 'update_daily_data')
-        job_display_name = job_status.get('job_display_name') or job_status.get('job_name') or 'Daily Stock Data Update'
-        start_time = job_status.get('start_time')
-        end_time = job_status.get('end_time')
-        duration = job_status.get('duration_seconds', 0)
-        
+        job_internal_name = job_status.get("job_name", "update_daily_data")
+        job_display_name = job_status.get("job_display_name") or job_status.get("job_name") or "Daily Stock Data Update"
+        start_time = job_status.get("start_time")
+        end_time = job_status.get("end_time")
+        duration = job_status.get("duration_seconds", 0)
+
         # Calculate duration in readable format
         hours = int(duration // 3600)
         minutes = int((duration % 3600) // 60)
@@ -55,9 +55,9 @@ def send_email_notification(job_status: Dict[str, Any]) -> bool:
         duration_str = f"{hours}h {minutes}m {seconds}s" if hours > 0 else f"{minutes}m {seconds}s"
 
         # Determine subject based on status
-        if status == 'success':
+        if status == "success":
             subject = f"✅ {job_display_name} - Success"
-        elif status == 'failed':
+        elif status == "failed":
             subject = f"❌ {job_display_name} - Failed"
         else:
             subject = f"⚠️ {job_display_name} - {status.capitalize()}"
@@ -95,7 +95,7 @@ def send_email_notification(job_status: Dict[str, Any]) -> bool:
         """
 
         # Add error information if present
-        if 'error' in job_status:
+        if "error" in job_status:
             html_body += f"""
                     <tr>
                         <td colspan="2" style="padding: 15px 0 8px 0;"><strong style="color: #dc3545;">Error:</strong></td>
@@ -108,7 +108,7 @@ def send_email_notification(job_status: Dict[str, Any]) -> bool:
             """
 
         # Add warning information if present
-        if 'warning' in job_status:
+        if "warning" in job_status:
             html_body += f"""
                     <tr>
                         <td colspan="2" style="padding: 15px 0 8px 0;"><strong style="color: #ff9800;">Warning:</strong></td>
@@ -136,7 +136,7 @@ def send_email_notification(job_status: Dict[str, Any]) -> bool:
         except Exception as e:
             logger.error(f"Failed to create email client: {e}")
             return False
-        
+
         message = {
             "senderAddress": settings.acs_sender_email,
             "recipients": {
@@ -151,7 +151,7 @@ def send_email_notification(job_status: Dict[str, Any]) -> bool:
         try:
             poller = client.begin_send(message)
             result = poller.result()
-            
+
             logger.info(f"Email notification sent successfully. Message ID: {result['id']}")
             return True
         except Exception as e:

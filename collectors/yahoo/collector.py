@@ -4,17 +4,14 @@ from Yahoo Finance using the market-prices library. It supports both full histor
 and incremental updates, with robust error handling and anomaly detection.
 """
 
-import os
 import pandas as pd
 import numpy as np
 from pathlib import Path
 from loguru import logger
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, cast
 from datetime import date, datetime, timedelta
 import time
-import requests
 from market_prices import PricesYahoo
-from dateutil.tz import tzlocal
 
 from config import settings
 from utils import normalize_datetime_to_date
@@ -62,7 +59,7 @@ class YahooCollector:
             self.start_date = self.DEFAULT_WEEKLY_START_DATE
         else:
             self.start_date = self.DEFAULT_START_DATE
-        
+
         self.end_date = end_date or datetime.now().strftime("%Y-%m-%d")
         self.interval = interval
         self.delay = delay
@@ -70,7 +67,7 @@ class YahooCollector:
 
         # Get paths from config
         self.us_index_path = Path(settings.us_index_path).expanduser()
-        
+
         # Determine data directory based on interval or custom path
         if data_dir:
             self.us_stock_data_dir = Path(data_dir).expanduser()
@@ -86,7 +83,7 @@ class YahooCollector:
         self.abnormal_tickers = set()
         self.abnormal_log_path = self.us_stock_data_dir / "abnormal_tickers.txt"
 
-        logger.info(f"Yahoo collector initialized")
+        logger.info("Yahoo collector initialized")
         logger.info(f"Index file: {self.us_index_path}")
         logger.info(f"Data directory: {self.us_stock_data_dir}")
         logger.info(f"Date range: {self.start_date} to {self.end_date}")
@@ -104,10 +101,10 @@ class YahooCollector:
 
         try:
             # Read tab-separated file: symbol \t start_date \t end_date
-            df = pd.read_csv(self.us_index_path, sep='\t', header=None,
-                           names=['symbol', 'start_date', 'end_date'])
+            df = pd.read_csv(self.us_index_path, sep="\t", header=None,
+                           names=["symbol", "start_date", "end_date"])
 
-            symbols = df['symbol'].unique().tolist()
+            symbols = df["symbol"].unique().tolist()
             logger.info(f"Loaded {len(symbols)} symbols from index file")
 
             # Apply limit if specified
@@ -135,7 +132,7 @@ class YahooCollector:
         pd.DataFrame
             Filtered DataFrame with only date entries (no timestamps)
         """
-        required_cols = ['date', 'open', 'high', 'low', 'close', 'volume']
+        required_cols = ["date", "open", "high", "low", "close", "volume"]
         if not all(col in data.columns for col in required_cols):
             logger.warning("Data does not contain all required columns for filtering")
             return pd.DataFrame()  # Return empty DataFrame if columns missing
@@ -145,9 +142,9 @@ class YahooCollector:
             return data
 
         # Make a copy and normalize date column
-        filtered_data = data.copy()
+        filtered_data = pd.DataFrame(data.copy())
 
-        filtered_data['date'] = filtered_data['date'].apply(normalize_datetime_to_date)
+        filtered_data["date"] = filtered_data["date"].apply(normalize_datetime_to_date)
 
         if self.interval == "1wk":
             # For weekly data, keep only rows where time is 00:00:00 and day is before the reference Monday
@@ -159,10 +156,10 @@ class YahooCollector:
                 reference_monday = today - timedelta(days=days)  # This week's Monday
             else:  # Monday to Friday
                 reference_monday = today - timedelta(days=7 + days)  # Last week's Monday
-            mask = (filtered_data['date'] <= reference_monday)
-            filtered_data = filtered_data[mask]
+            mask = (filtered_data["date"] <= reference_monday)
+            filtered_data = pd.DataFrame(filtered_data.loc[mask])
 
-        return filtered_data
+        return cast(pd.DataFrame, filtered_data)
 
     @staticmethod
     def _mp_extract_symbol_ohlcv(raw: pd.DataFrame, symbol: str) -> pd.DataFrame:
@@ -177,16 +174,22 @@ class YahooCollector:
         if raw is None or raw.empty:
             return pd.DataFrame()
 
-        df = raw
+        df = pd.DataFrame(raw)
 
         # If columns are MultiIndex, slice out the requested symbol.
         if isinstance(df.columns, pd.MultiIndex):
             try:
-                df = df.xs(symbol, axis=1, level=0, drop_level=True)
+                sliced = df.xs(symbol, axis=1, level=0, drop_level=True)
+                if isinstance(sliced, pd.Series):
+                    sliced = sliced.to_frame()
+                df = pd.DataFrame(sliced)
             except KeyError:
                 # Some outputs may include whitespace-normalized symbols.
                 if symbol in df.columns.get_level_values(0):
-                    df = df[symbol]
+                    col = df[symbol]
+                    if isinstance(col, pd.Series):
+                        col = col.to_frame()
+                    df = pd.DataFrame(col)
                 else:
                     return pd.DataFrame()
 
@@ -198,7 +201,7 @@ class YahooCollector:
         else:
             date_index = df.index
 
-        out = df.reset_index(drop=True)
+        out: pd.DataFrame = pd.DataFrame(df.reset_index(drop=True))
         out.insert(0, "date", pd.to_datetime(date_index))
         out["symbol"] = symbol
 
@@ -207,7 +210,7 @@ class YahooCollector:
         if missing:
             return pd.DataFrame()
 
-        return out[keep_cols]
+        return cast(pd.DataFrame, out.loc[:, keep_cols])
 
     @staticmethod
     def _aggregate_weekly(df: pd.DataFrame) -> pd.DataFrame:
@@ -220,15 +223,18 @@ class YahooCollector:
         week_start = (dt - pd.to_timedelta(dt.dt.weekday, unit="D")).dt.normalize()
 
         grouped = df_sorted.assign(date=week_start).groupby("date", as_index=False)
-        weekly = grouped.agg(
+        weekly = cast(
+            pd.DataFrame,
+            grouped.agg(
             open=("open", "first"),
             high=("high", "max"),
             low=("low", "min"),
             close=("close", "last"),
             volume=("volume", "sum"),
+            ),
         )
         weekly["symbol"] = df_sorted["symbol"].iloc[0]
-        return weekly[["date", "open", "high", "low", "close", "volume", "symbol"]]
+        return cast(pd.DataFrame, weekly[["date", "open", "high", "low", "close", "volume", "symbol"]])
 
     def _get_data_from_yahoo(self, symbol: str, start: str, end: str) -> Optional[pd.DataFrame]:
         """Get stock data from Yahoo Finance.
@@ -262,9 +268,8 @@ class YahooCollector:
 
                 if filtered_data is not None and not filtered_data.empty:
                     return filtered_data
-                else:
-                    logger.warning(f"Empty or invalid data for {symbol} (attempt {attempt + 1}/{self.RETRY_COUNT})")
-                    return pd.DataFrame()  # Return empty DataFrame if no valid data
+                logger.warning(f"Empty or invalid data for {symbol} (attempt {attempt + 1}/{self.RETRY_COUNT})")
+                return pd.DataFrame()  # Return empty DataFrame if no valid data
             except Exception as e:
                 logger.warning(f"Error fetching {symbol} (attempt {attempt + 1}/{self.RETRY_COUNT}): {e}")
                 if attempt < self.RETRY_COUNT - 1:
@@ -294,14 +299,14 @@ class YahooCollector:
         try:
             df = pd.read_csv(file_path)
 
-            if df.empty or 'date' not in df.columns:
+            if df.empty or "date" not in df.columns:
                 return None, None, None
 
-            df['date'] = pd.to_datetime(df['date'])
-            df = df.sort_values('date')
+            df["date"] = pd.to_datetime(df["date"])
+            df = df.sort_values("date")
 
-            min_date = df['date'].min().strftime("%Y-%m-%d")
-            max_date = df['date'].max().strftime("%Y-%m-%d")
+            min_date = df["date"].min().strftime("%Y-%m-%d")
+            max_date = df["date"].max().strftime("%Y-%m-%d")
 
             return df, min_date, max_date
 
@@ -329,15 +334,15 @@ class YahooCollector:
 
         try:
             # Calculate daily returns using vectorized operations
-            df_sorted = df.sort_values('date').copy()
-            
+            df_sorted = df.sort_values("date").copy()
+
             # Use shift for previous close - more efficient
-            df_sorted['prev_close'] = df_sorted['close'].shift(1)
-            
+            df_sorted["prev_close"] = df_sorted["close"].shift(1)
+
             # Vectorized return calculation
-            with np.errstate(divide='ignore', invalid='ignore'):
-                daily_return = np.abs(df_sorted['close'] / df_sorted['prev_close'] - 1)
-            
+            with np.errstate(divide="ignore", invalid="ignore"):
+                daily_return = np.abs(df_sorted["close"] / df_sorted["prev_close"] - 1)
+
             # Check for extreme price changes
             extreme_changes = daily_return > self.ABNORMAL_CHANGE_THRESHOLD
             if np.any(extreme_changes):
@@ -346,9 +351,9 @@ class YahooCollector:
                 return True
 
             # Check for zero or negative prices using vectorized operations
-            price_cols = ['close', 'open', 'high', 'low']
+            price_cols = ["close", "open", "high", "low"]
             invalid_prices = (df_sorted[price_cols] <= 0).any(axis=1)
-            
+
             if invalid_prices.any():
                 invalid_count = invalid_prices.sum()
                 logger.warning(f"Detected {invalid_count} invalid prices for {symbol}")
@@ -356,11 +361,11 @@ class YahooCollector:
 
             # Check for illogical OHLC relationships using vectorized operations
             illogical_ohlc = (
-                (df_sorted['high'] < df_sorted['low']) |
-                (df_sorted['high'] < df_sorted['open']) |
-                (df_sorted['high'] < df_sorted['close']) |
-                (df_sorted['low'] > df_sorted['open']) |
-                (df_sorted['low'] > df_sorted['close'])
+                (df_sorted["high"] < df_sorted["low"]) |
+                (df_sorted["high"] < df_sorted["open"]) |
+                (df_sorted["high"] < df_sorted["close"]) |
+                (df_sorted["low"] > df_sorted["open"]) |
+                (df_sorted["low"] > df_sorted["close"])
             )
 
             if illogical_ohlc.any():
@@ -393,8 +398,8 @@ class YahooCollector:
         """
         try:
             # Find overlapping dates
-            existing_dates = set(existing_df['date'])
-            new_dates = set(new_df['date'])
+            existing_dates = set(existing_df["date"])
+            new_dates = set(new_df["date"])
             overlapping_dates = existing_dates.intersection(new_dates)
 
             if not overlapping_dates:
@@ -404,16 +409,17 @@ class YahooCollector:
             logger.info(f"Checking {len(overlapping_dates)} overlapping dates for {symbol}")
 
             # Get overlapping records
-            existing_overlap = existing_df[existing_df['date'].isin(overlapping_dates)].sort_values('date')
-            new_overlap = new_df[new_df['date'].isin(overlapping_dates)].sort_values('date')
+            overlapping_dates_list = list(overlapping_dates)
+            existing_overlap = existing_df.loc[existing_df["date"].isin(overlapping_dates_list)].sort_values(by="date")
+            new_overlap = new_df.loc[new_df["date"].isin(overlapping_dates_list)].sort_values(by="date")
 
             # Check for inconsistencies in overlapping data
-            price_cols = ['open', 'high', 'low', 'close']
+            price_cols = ["open", "high", "low", "close"]
             tolerance = 0.01  # 1% tolerance for price differences
 
             for date in overlapping_dates:
-                existing_row = existing_overlap[existing_overlap['date'] == date].iloc[0]
-                new_row = new_overlap[new_overlap['date'] == date].iloc[0]
+                existing_row = existing_overlap[existing_overlap["date"] == date].iloc[0]
+                new_row = new_overlap[new_overlap["date"] == date].iloc[0]
 
                 # Compare prices with tolerance
                 for col in price_cols:
@@ -436,10 +442,10 @@ class YahooCollector:
                             return True
 
                 # Check volume consistency (larger tolerance for volume)
-                if 'volume' in existing_row and 'volume' in new_row:
-                    existing_vol = existing_row['volume']
-                    new_vol = new_row['volume']
-                    
+                if "volume" in existing_row and "volume" in new_row:
+                    existing_vol = existing_row["volume"]
+                    new_vol = new_row["volume"]
+
                     if not pd.isna(existing_vol) and not pd.isna(new_vol) and existing_vol != 0:
                         vol_diff = abs(new_vol - existing_vol) / abs(existing_vol)
                         if vol_diff > 0.1:  # 10% tolerance for volume
@@ -475,8 +481,8 @@ class YahooCollector:
         """
         try:
             # Ensure date columns are datetime
-            existing_df['date'] = pd.to_datetime(existing_df['date'])
-            new_df['date'] = pd.to_datetime(new_df['date'])
+            existing_df["date"] = pd.to_datetime(existing_df["date"])
+            new_df["date"] = pd.to_datetime(new_df["date"])
 
             # Check for anomalies in overlapping data before merging
             if self._detect_overlapping_data_anomalies(existing_df, new_df, symbol):
@@ -486,8 +492,8 @@ class YahooCollector:
 
             # Combine and remove duplicates, keeping new data
             combined_df = pd.concat([existing_df, new_df], ignore_index=True)
-            combined_df = combined_df.drop_duplicates(subset=['date'], keep='last')
-            combined_df = combined_df.sort_values('date').reset_index(drop=True)
+            combined_df = combined_df.drop_duplicates(subset=["date"], keep="last")
+            combined_df = combined_df.sort_values("date").reset_index(drop=True)
 
             logger.info(f"Successfully merged data for {symbol}: {len(combined_df)} total records")
             return combined_df
@@ -515,11 +521,11 @@ class YahooCollector:
             file_path = self.us_stock_data_dir / f"{symbol.upper()}.csv"
 
             # Ensure symbol column exists
-            if 'symbol' not in df.columns:
-                df['symbol'] = symbol
+            if "symbol" not in df.columns:
+                df["symbol"] = symbol
 
             # Sort by date and save
-            df_sorted = df.sort_values('date').reset_index(drop=True)
+            df_sorted = df.sort_values("date").reset_index(drop=True)
 
             df_sorted.to_csv(file_path, index=False)
 
@@ -557,8 +563,19 @@ class YahooCollector:
             logger.info(f"Existing data for {symbol}: {min_date} to {max_date}")
 
             # Determine date range for new data
+            if max_date is None:
+                logger.warning(f"Missing max_date for {symbol}; skipping incremental download")
+                return
+
             start_download = max(pd.Timestamp(self.start_date), pd.Timestamp(max_date) + pd.Timedelta(days=1))
             end_download = pd.Timestamp(self.end_date)
+
+            if bool(pd.isna(start_download)) or bool(pd.isna(end_download)):
+                logger.warning(f"Invalid date range for {symbol}; skipping incremental download")
+                return
+
+            start_download = cast(pd.Timestamp, start_download)
+            end_download = cast(pd.Timestamp, end_download)
 
             if start_download <= end_download:
                 start_str = start_download.strftime("%Y-%m-%d")
@@ -584,7 +601,7 @@ class YahooCollector:
         logger.warning(f"Re-downloading full data for {len(self.abnormal_tickers)} abnormal tickers")
 
         # Save abnormal tickers to file for reference
-        with open(self.abnormal_log_path, 'w') as f:
+        with open(self.abnormal_log_path, "w") as f:
             f.write(f"Abnormal tickers detected on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}:\n")
             for ticker in sorted(self.abnormal_tickers):
                 f.write(f"{ticker}\n")
@@ -642,9 +659,8 @@ class YahooCollector:
 
                 if filtered_data is not None and not filtered_data.empty:
                     return filtered_data
-                else:
-                    logger.warning(f"Empty or invalid batch data for {symbols} (attempt {attempt + 1}/{self.RETRY_COUNT})")
-                    return None  # Return empty DataFrame if no valid data
+                logger.warning(f"Empty or invalid batch data for {symbols} (attempt {attempt + 1}/{self.RETRY_COUNT})")
+                return None  # Return empty DataFrame if no valid data
 
             except Exception as e:
                 logger.warning(f"Error fetching batch data for {symbols} (attempt {attempt + 1}/{self.RETRY_COUNT}): {e}")
@@ -679,41 +695,37 @@ class YahooCollector:
             # Daily data batch sizing based on period length
             if period_days <= 5:
                 return 50
-            elif period_days <= 10:
+            if period_days <= 10:
                 return 30
-            elif period_days <= 20:
+            if period_days <= 20:
                 return 20
-            elif period_days <= 30:
+            if period_days <= 30:
                 return 10
-            elif period_days <= 60:
+            if period_days <= 60:
                 return 5
-            else:
-                return 1
+            return 1
 
-        elif self.interval == "1min":
+        if self.interval == "1min":
             # Minute data requires much smaller batches due to data volume
             if period_days <= 1:
                 return 10
-            elif period_days <= 5:
+            if period_days <= 5:
                 return 5
-            elif period_days <= 10:
+            if period_days <= 10:
                 return 3
-            else:
-                return 1
-        elif self.interval == "1wk":
+            return 1
+        if self.interval == "1wk":
             if period_days <= 30:
                 return 50
-            elif period_days <= 90:
+            if period_days <= 90:
                 return 20
-            elif period_days <= 180:
+            if period_days <= 180:
                 return 10
-            elif period_days <= 365:
+            if period_days <= 365:
                 return 5
-            else:
-                return 1
-        else:
-            # Default for other intervals
-            return 10
+            return 1
+        # Default for other intervals
+        return 10
 
     def _collect_batch_incremental_data(self, symbols_need_update: List[str], start_date: str, end_date: str) -> dict:
         """Collect incremental data for multiple symbols in batches.
@@ -751,7 +763,7 @@ class YahooCollector:
             if batch_data is not None and not batch_data.empty:
                 # Split batch data by symbol
                 for symbol in batch_symbols:
-                    symbol_data = batch_data[batch_data['symbol'] == symbol]
+                    symbol_data = batch_data[batch_data["symbol"] == symbol]
                     if not symbol_data.empty:
                         batch_results[symbol] = symbol_data.copy()
                         logger.info(f"Retrieved {len(symbol_data)} records for {symbol}")
@@ -786,14 +798,25 @@ class YahooCollector:
 
             logger.info("Analyzing existing data files...")
             for symbol in symbols:
-                existing_df, min_date, max_date = self._get_existing_data_info(symbol)
+                existing_df, _min_date, max_date = self._get_existing_data_info(symbol)
 
                 if existing_df is None:
                     symbols_full_download.append(symbol)
                 else:
                     # Check if incremental update is needed
+                    if max_date is None:
+                        logger.warning(f"Missing max_date for {symbol}; skipping incremental categorization")
+                        continue
+
                     start_download = max(pd.Timestamp(self.start_date), pd.Timestamp(max_date))
                     end_download = pd.Timestamp(self.end_date)
+
+                    if bool(pd.isna(start_download)) or bool(pd.isna(end_download)):
+                        logger.warning(f"Invalid date range for {symbol}; skipping incremental categorization")
+                        continue
+
+                    start_download = cast(pd.Timestamp, start_download)
+                    end_download = cast(pd.Timestamp, end_download)
 
                     if start_download <= end_download:
                         symbols_incremental.append(symbol)
@@ -830,9 +853,12 @@ class YahooCollector:
                     new_df = batch_results.get(symbol)
 
                     if new_df is not None and not new_df.empty:
-                        # Merge with existing data
-                        merged_df = self._merge_data(existing_df, new_df, symbol)
-                        self._save_data(merged_df, symbol)
+                        if existing_df is None:
+                            self._save_data(new_df, symbol)
+                        else:
+                            # Merge with existing data
+                            merged_df = self._merge_data(existing_df, new_df, symbol)
+                            self._save_data(merged_df, symbol)
                     elif existing_df is not None:
                         logger.info(f"No new data available for {symbol}, existing data is up to date")
 
