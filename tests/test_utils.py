@@ -1,6 +1,8 @@
 """Unit tests for utils.py module."""
 import pytest
 from datetime import datetime, date
+from pathlib import Path
+from unittest.mock import patch, mock_open
 import pandas as pd
 import numpy as np
 
@@ -197,14 +199,14 @@ class TestNormalizeDatetimeToDate:
         assert result == date(2024, 1, 15)
 
     def test_handles_nan_value(self):
-        """Test that NaN-like values return None."""
+        """Test that NaN returns NaT."""
         result = normalize_datetime_to_date(pd.NaT)
-        assert result is None
+        assert pd.isna(result)
 
     def test_handles_none_value(self):
-        """Test that NaN-like values return None."""
+        """Test that None-like values return NaT."""
         result = normalize_datetime_to_date(np.nan)
-        assert result is None
+        assert pd.isna(result)
 
     def test_converts_string_to_date(self):
         """Test conversion of date string to date."""
