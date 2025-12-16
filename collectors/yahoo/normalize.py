@@ -3,12 +3,14 @@ This normalizer processes raw stock data from Yahoo Finance, applying standardiz
 anomaly detection, and adjustment calculations to prepare data for analysis.
 """
 
+import os
 import copy
 import numpy as np
 import pandas as pd
 from pathlib import Path
 from loguru import logger
-from typing import ClassVar, Optional, List, cast
+from typing import Optional, List, Iterable
+from datetime import datetime
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
@@ -18,8 +20,8 @@ class YahooNormalizer:
     """Yahoo Finance data normalizer for US stocks."""
 
     # Standard column names for normalized data
-    COLUMNS: ClassVar[list[str]] = ["open", "close", "high", "low", "volume"]
-    DATE_FORMAT: ClassVar[str] = "%Y-%m-%d"
+    COLUMNS = ["open", "close", "high", "low", "volume"]
+    DATE_FORMAT = "%Y-%m-%d"
 
     # Anomaly detection thresholds
     ABNORMAL_CHANGE_MIN = 89  # Minimum abnormal change factor
@@ -30,7 +32,7 @@ class YahooNormalizer:
         self,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
-        max_workers: int | None = None,
+        max_workers: int = None,
         date_field_name: str = "date",
         symbol_field_name: str = "symbol",
         calendar_list: Optional[List] = None,
@@ -87,7 +89,7 @@ class YahooNormalizer:
         # Ensure normalized data directory exists
         self.us_normalized_data_dir.mkdir(parents=True, exist_ok=True)
 
-        logger.info("Yahoo normalizer initialized")
+        logger.info(f"Yahoo normalizer initialized")
         logger.info(f"Source directory: {self.us_stock_data_dir}")
         logger.info(f"Target directory: {self.us_normalized_data_dir}")
         logger.info(f"Max workers: {self.max_workers}")
@@ -115,8 +117,10 @@ class YahooNormalizer:
             prev_close_series.iloc[0] = float(last_close)
 
         # Vectorized calculation with proper handling of division by zero
-        with np.errstate(divide="ignore", invalid="ignore"):
-            return close_series / prev_close_series - 1
+        with np.errstate(divide='ignore', invalid='ignore'):
+            change_series = close_series / prev_close_series - 1
+        
+        return change_series
 
     def normalize_yahoo_data(
         self,
@@ -148,32 +152,24 @@ class YahooNormalizer:
 
         # Copy required columns
         columns = copy.deepcopy(self.COLUMNS)
-        df_norm = pd.DataFrame(df.copy())
+        df_norm = df.copy()
 
         # Set date index and handle timezone
         df_norm.set_index(self.date_field_name, inplace=True)
         df_norm.index = pd.to_datetime(df_norm.index)
-        df_norm.index = pd.DatetimeIndex(df_norm.index).tz_localize(None)
+        df_norm.index = df_norm.index.tz_localize(None)
 
         # Remove duplicate dates, keep first
         df_norm = df_norm[~df_norm.index.duplicated(keep="first")]
 
         # Reindex to trading calendar if provided
         if calendar_list is not None:
-            calendar_index = pd.DatetimeIndex(pd.to_datetime(calendar_list, errors="coerce"))
-            calendar_index = calendar_index[~calendar_index.isna()]
-            cal_df = pd.DataFrame(index=calendar_index)
-            min_val = df_norm.index.min()
-            max_val = df_norm.index.max()
-            if bool(pd.isna(min_val)) or bool(pd.isna(max_val)):
-                return df_norm.reset_index()
-
-            assert isinstance(min_val, pd.Timestamp)
-            assert isinstance(max_val, pd.Timestamp)
-            min_ts = min_val
-            max_ts = max_val
-            date_range = cal_df.loc[min_ts : max_ts + pd.Timedelta(hours=23, minutes=59)].index
-            df_norm = cast(pd.DataFrame, df_norm.reindex(date_range))
+            cal_df = pd.DataFrame(index=calendar_list)
+            date_range = cal_df.loc[
+                pd.Timestamp(df_norm.index.min()).date() :
+                pd.Timestamp(df_norm.index.max()).date() + pd.Timedelta(hours=23, minutes=59)
+            ].index
+            df_norm = df_norm.reindex(date_range)
 
         # Sort by index
         df_norm.sort_index(inplace=True)
@@ -186,7 +182,7 @@ class YahooNormalizer:
         # Anomaly correction loop with improved efficiency
         correction_count = 0
         while correction_count < self.MAX_CORRECTION_ITERATIONS:
-            change_series = self.calc_change(cast(pd.DataFrame, df_norm), last_close)
+            change_series = self.calc_change(df_norm, last_close)
 
             # Find anomalous changes using vectorized operations
             anomaly_mask = (
@@ -216,7 +212,7 @@ class YahooNormalizer:
             )
 
         # Calculate final change series
-        df_norm["change"] = self.calc_change(cast(pd.DataFrame, df_norm), last_close)
+        df_norm["change"] = self.calc_change(df_norm, last_close)
         columns.append("change")
 
         # Set invalid volume rows to NaN for all calculated columns
@@ -320,7 +316,8 @@ class YahooNormalizer:
             First valid close price
         """
         df_valid = df.loc[df["close"].first_valid_index():]
-        return float(df_valid["close"].iloc[0])
+        first_close = df_valid["close"].iloc[0]
+        return first_close
 
     def normalize_single_symbol(self, symbol: str) -> bool:
         """Normalize data for a single symbol.
@@ -345,7 +342,7 @@ class YahooNormalizer:
                 return False
 
             # Read raw data
-            df: pd.DataFrame = pd.read_csv(input_path)
+            df = pd.read_csv(input_path)
 
             if df.empty:
                 logger.warning(f"Empty data file for {symbol}")
@@ -356,9 +353,9 @@ class YahooNormalizer:
                 df[self.date_field_name] = pd.to_datetime(df[self.date_field_name])
 
                 if self.start_date:
-                    df = cast(pd.DataFrame, df[df[self.date_field_name] >= pd.Timestamp(self.start_date)])
+                    df = df[df[self.date_field_name] >= pd.Timestamp(self.start_date)]
                 if self.end_date:
-                    df = cast(pd.DataFrame, df[df[self.date_field_name] <= pd.Timestamp(self.end_date)])
+                    df = df[df[self.date_field_name] <= pd.Timestamp(self.end_date)]
 
                 if df.empty:
                     logger.warning(f"No data in date range for {symbol}")

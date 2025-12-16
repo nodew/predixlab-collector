@@ -3,7 +3,7 @@
 Provides centralized configuration management with validation.
 """
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 from pydantic import field_validator, Field
 from pydantic_settings import BaseSettings
 from loguru import logger
@@ -11,7 +11,7 @@ from loguru import logger
 
 class Settings(BaseSettings):
     """Application settings with validation.
-
+    
     All file paths are relative to the project root by default.
     Environment variables can override any setting.
     """
@@ -44,55 +44,55 @@ class Settings(BaseSettings):
     cn_normalized_weekly_data_dir: str = "data/normalized_weekly_data/cn_data"
 
     # MongoDB settings
-    mongodb_url: str = Field(default="mongodb://localhost:27017")
-    database_name: str = Field(default="predixlab", min_length=1)
-    jobs_collection: str = Field(default="jobs", min_length=1)
+    mongodb_url: str = Field(default='mongodb://localhost:27017')
+    database_name: str = Field(default='predixlab', min_length=1)
+    jobs_collection: str = Field(default='jobs', min_length=1)
 
     # Azure Communication Service email settings
-    acs_connection_string: str = Field(default="")
-    acs_sender_email: str = Field(default="")
-    acs_to_emails: str = Field(default="")  # Comma-separated list of recipient emails
+    acs_connection_string: str = Field(default='')
+    acs_sender_email: str = Field(default='')
+    acs_to_emails: str = Field(default='')  # Comma-separated list of recipient emails
 
-    @field_validator("mongodb_url")
+    @field_validator('mongodb_url')
     @classmethod
     def validate_mongodb_url(cls, v: str) -> str:
         """Validate MongoDB URL format."""
-        if v and not v.startswith(("mongodb://", "mongodb+srv://")):
-            raise ValueError("MongoDB URL must start with mongodb:// or mongodb+srv://")
+        if v and not v.startswith(('mongodb://', 'mongodb+srv://')):
+            raise ValueError('MongoDB URL must start with mongodb:// or mongodb+srv://')
         return v
 
-    @field_validator("acs_sender_email")
+    @field_validator('acs_sender_email')
     @classmethod
     def validate_sender_email(cls, v: str) -> str:
         """Validate sender email format."""
-        if v and "@" not in v:
-            raise ValueError("Invalid sender email format")
+        if v and '@' not in v:
+            raise ValueError('Invalid sender email format')
         return v
 
-    @field_validator("acs_to_emails")
+    @field_validator('acs_to_emails')
     @classmethod
     def validate_to_emails(cls, v: str) -> str:
         """Validate recipient emails format."""
         if v:
-            emails = [e.strip() for e in v.split(",") if e.strip()]
+            emails = [e.strip() for e in v.split(',') if e.strip()]
             for email in emails:
-                if "@" not in email:
-                    raise ValueError(f"Invalid email format: {email}")
+                if '@' not in email:
+                    raise ValueError(f'Invalid email format: {email}')
         return v
 
     def get_to_emails_list(self) -> List[str]:
         """Get recipient emails as a list.
-
+        
         Returns:
             List of validated email addresses.
         """
         if not self.acs_to_emails:
             return []
-        return [email.strip() for email in self.acs_to_emails.split(",") if email.strip()]
+        return [email.strip() for email in self.acs_to_emails.split(',') if email.strip()]
 
     def is_email_configured(self) -> bool:
         """Check if email notification is properly configured.
-
+        
         Returns:
             True if all required email settings are present.
         """
@@ -120,10 +120,10 @@ class Settings(BaseSettings):
             self.us_normalized_weekly_data_dir,
             self.cn_normalized_weekly_data_dir,
         ]
-
+        
         for dir_path in directories:
             Path(dir_path).mkdir(parents=True, exist_ok=True)
-
+        
         logger.debug("All required directories verified/created")
 
     class Config:

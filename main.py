@@ -11,6 +11,7 @@ Usage:
 """
 
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, Optional
 import fire
 from loguru import logger
@@ -46,12 +47,12 @@ class QStockMarketDataService:
             coll = db[settings.jobs_collection]
 
             # Add timestamp if not present
-            if "created_at" not in job_status:
-                job_status["created_at"] = datetime.now(timezone.utc)
+            if 'created_at' not in job_status:
+                job_status['created_at'] = datetime.now(timezone.utc)
 
             # Insert job status document
             result = coll.insert_one(job_status)
-
+            
             logger.info(f"Job status saved to database. Document ID: {result.inserted_id}")
             return True
 
@@ -89,7 +90,7 @@ class QStockMarketDataService:
 
         # 2. Send email notification (include note if DB failed)
         if not db_saved:
-            job_status.setdefault("warning", "DB save failed prior to notification")
+            job_status.setdefault('warning', 'DB save failed prior to notification')
 
         email_sent = send_email_notification(job_status)
         if email_sent:
@@ -106,21 +107,21 @@ class QStockMarketDataService:
         start_time: datetime
     ) -> Dict[str, Any]:
         """Prepare initial job status dictionary.
-
+        
         Args:
             job_name: Internal job identifier
             job_display_name: Human-readable display name
             start_time: Job start time
-
+            
         Returns:
             Initial job status dictionary.
         """
         return {
-            "job_name": job_name,
-            "job_display_name": job_display_name,
-            "start_time": start_time.isoformat(),
-            "status": "failed",  # Default to failed, will update on success
-            "results": {}
+            'job_name': job_name,
+            'job_display_name': job_display_name,
+            'start_time': start_time.isoformat(),
+            'status': 'failed',  # Default to failed, will update on success
+            'results': {}
         }
 
     def _finalize_job_status(
@@ -130,15 +131,15 @@ class QStockMarketDataService:
         no_upload: bool = False
     ) -> None:
         """Finalize job status with end time and execute post-job tasks.
-
+        
         Args:
             job_status: Job status dictionary to finalize
             start_time: Job start time
             no_upload: If True, skip post-job tasks
         """
         end_time = datetime.now()
-        job_status["end_time"] = end_time.isoformat()
-        job_status["duration_seconds"] = (end_time - start_time).total_seconds()
+        job_status['end_time'] = end_time.isoformat()
+        job_status['duration_seconds'] = (end_time - start_time).total_seconds()
 
         if no_upload:
             logger.info("Skipping post-job tasks (no_upload=True)")
@@ -181,11 +182,11 @@ class QStockMarketDataService:
 
     def collect_yahoo_data(
         self,
-        start_date: str | None = None,
-        end_date: str | None = None,
+        start_date: str = None,
+        end_date: str = None,
         interval: str = "1d",
         delay: float = 0.5,
-        limit_nums: int | None = None
+        limit_nums: int = None
     ):
         """Collect US stock data from Yahoo Finance.
 
@@ -227,9 +228,9 @@ class QStockMarketDataService:
 
     def normalize_yahoo_data(
         self,
-        start_date: str | None = None,
-        end_date: str | None = None,
-        max_workers: int | None = None,
+        start_date: str = None,
+        end_date: str = None,
+        max_workers: int = None,
         date_field_name: str = "date",
         symbol_field_name: str = "symbol"
     ):
@@ -283,8 +284,8 @@ class QStockMarketDataService:
         """
         start_time = datetime.now()
         job_status = self._prepare_job_status(
-            job_name="predixlab_daily_marketdata_collector",
-            job_display_name="PredixLab Daily Market Data Collector",
+            job_name='predixlab_daily_marketdata_collector',
+            job_display_name='PredixLab Daily Market Data Collector',
             start_time=start_time
         )
 
@@ -316,19 +317,19 @@ class QStockMarketDataService:
             self.normalize_yahoo_data()
 
             logger.info("✅ Full update of 1-day interval stock data completed successfully!")
-
+            
             # Update job status with success
-            job_status["status"] = "success"
-            job_status["results"] = {
-                "last_trading_date": last_trading_date,
-                "symbols_processed": symbols_count,
-                "data_collected": True,
-                "data_normalized": True
+            job_status['status'] = 'success'
+            job_status['results'] = {
+                'last_trading_date': last_trading_date,
+                'symbols_processed': symbols_count,
+                'data_collected': True,
+                'data_normalized': True
             }
 
         except Exception as e:
             logger.error(f"❌ Full update of 1-day interval stock data failed: {e}")
-            job_status["error"] = str(e)
+            job_status['error'] = str(e)
             raise
         finally:
             self._finalize_job_status(job_status, start_time, no_upload)
@@ -343,8 +344,8 @@ class QStockMarketDataService:
         """
         start_time = datetime.now()
         job_status = self._prepare_job_status(
-            job_name="predixlab_weekly_marketdata_collector",
-            job_display_name="PredixLab Weekly Market Data Collector",
+            job_name='predixlab_weekly_marketdata_collector',
+            job_display_name='PredixLab Weekly Market Data Collector',
             start_time=start_time
         )
 
@@ -367,7 +368,7 @@ class QStockMarketDataService:
             current_date = get_current_date()
             logger.info("Collecting weekly data...")
             from collectors.yahoo import YahooCollector, YahooNormalizer
-
+            
             # Collect weekly data
             collector = YahooCollector(
                 start_date=last_trading_date,
@@ -388,20 +389,20 @@ class QStockMarketDataService:
             normalizer.normalize()
 
             logger.info("✅ Full update of weekly stock data completed successfully!")
-
+            
             # Update job status with success
-            job_status["status"] = "success"
-            job_status["results"] = {
-                "last_trading_date": last_trading_date,
-                "symbols_processed": symbols_count,
-                "data_collected": True,
-                "data_normalized": True,
-                "interval": "1wk"
+            job_status['status'] = 'success'
+            job_status['results'] = {
+                'last_trading_date': last_trading_date,
+                'symbols_processed': symbols_count,
+                'data_collected': True,
+                'data_normalized': True,
+                'interval': '1wk'
             }
 
         except Exception as e:
             logger.error(f"❌ Full update of weekly stock data failed: {e}")
-            job_status["error"] = str(e)
+            job_status['error'] = str(e)
             raise
         finally:
             self._finalize_job_status(job_status, start_time, no_upload)
