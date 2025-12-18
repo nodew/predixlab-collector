@@ -661,50 +661,52 @@ class YahooCollector:
         if not symbols:
             return None
 
-        all_data = []
-        for symbol in symbols:
-            for attempt in range(self.RETRY_COUNT):
-                try:
-                    time.sleep(self.delay)
+        for attempt in range(self.RETRY_COUNT):
+            try:
+                time.sleep(self.delay)
 
-                    prices = PricesYahoo(symbol)
-                    # Note: market-prices uses "1D" format (uppercase) for daily interval
-                    data = prices.get(self.MARKET_PRICES_DAILY_INTERVAL, start=start, end=end)
+                # PricesYahoo accepts multiple symbols at once
+                prices = PricesYahoo(symbols)
+                # Note: market-prices uses "1D" format (uppercase) for daily interval
+                data = prices.get(self.MARKET_PRICES_DAILY_INTERVAL, start=start, end=end)
 
-                    if isinstance(data, pd.DataFrame) and not data.empty:
-                        # Reset index to get date as column
-                        data = data.reset_index()
+                if isinstance(data, pd.DataFrame) and not data.empty:
+                    # Reset index to get date as column
+                    data = data.reset_index()
 
-                        # Rename 'date' column if it exists, otherwise use index column
-                        if 'date' not in data.columns and 'index' in data.columns:
-                            data = data.rename(columns={'index': 'date'})
+                    # Rename 'date' column if it exists, otherwise use index column
+                    if 'date' not in data.columns and 'index' in data.columns:
+                        data = data.rename(columns={'index': 'date'})
 
-                        # Flatten multi-level columns if present
-                        if isinstance(data.columns, pd.MultiIndex):
-                            data.columns = data.columns.get_level_values(-1)
+                    # For multiple symbols, market-prices returns MultiIndex columns with symbol as top level
+                    # We need to reshape the data to have a 'symbol' column
+                    if isinstance(data.columns, pd.MultiIndex):
+                        # Stack the symbol level to convert from wide to long format
+                        date_col = data.columns[0]  # First column is the date
+                        data = data.set_index(date_col)
+                        data = data.stack(level=0, future_stack=True).reset_index()
+                        data.columns = ['date', 'symbol', 'open', 'high', 'low', 'close', 'volume']
+                    elif len(symbols) == 1:
+                        # Single symbol case - add symbol column
+                        data['symbol'] = symbols[0]
 
-                        # Add symbol column
-                        data['symbol'] = symbol
+                    # The market-prices library returns meaningful date data,
+                    # no need for normalize_datetime_to_date
+                    # Ensure date column is just the date part
+                    if 'date' in data.columns:
+                        data['date'] = pd.to_datetime(data['date']).dt.date
 
-                        # The market-prices library returns meaningful date data,
-                        # no need for normalize_datetime_to_date
-                        # Ensure date column is just the date part
-                        if 'date' in data.columns:
-                            data['date'] = pd.to_datetime(data['date']).dt.date
+                    return data
+                else:
+                    logger.warning(f"Empty or invalid batch daily data for {symbols} (attempt {attempt + 1}/{self.RETRY_COUNT})")
+                    return None
 
-                        all_data.append(data)
-                        break  # Success, move to next symbol
-                    else:
-                        logger.warning(f"Empty or invalid batch daily data for {symbol} (attempt {attempt + 1}/{self.RETRY_COUNT})")
-                        break  # No data, move to next symbol
+            except Exception as e:
+                logger.warning(f"Error fetching batch daily data for {symbols} (attempt {attempt + 1}/{self.RETRY_COUNT}): {e}")
+                if attempt < self.RETRY_COUNT - 1:
+                    time.sleep(self.delay * (attempt + 1))
 
-                except Exception as e:
-                    logger.warning(f"Error fetching batch daily data for {symbol} (attempt {attempt + 1}/{self.RETRY_COUNT}): {e}")
-                    if attempt < self.RETRY_COUNT - 1:
-                        time.sleep(self.delay * (attempt + 1))
-
-        if all_data:
-            return pd.concat(all_data, ignore_index=True)
+        logger.error(f"Failed to fetch batch daily data for {symbols} after {self.RETRY_COUNT} attempts")
         return None
 
     def _get_batch_weekly_data_from_yahoo(self, symbols: List[str], start: str, end: str) -> Optional[pd.DataFrame]:

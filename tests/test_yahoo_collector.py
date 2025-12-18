@@ -413,15 +413,17 @@ class TestYahooCollector:
             
             collector = YahooCollector(interval="1d", delay=0.01)
             
-            # Mock PricesYahoo
+            # Mock PricesYahoo with MultiIndex columns (realistic for multiple symbols)
             mock_prices = MagicMock()
-            mock_data = pd.DataFrame({
-                'open': [300.01, 298.37],
-                'high': [300.80, 300.87],
-                'low': [297.02, 293.68],
-                'close': [300.47, 299.50],
-                'volume': [27058300, 29982100]
-            }, index=pd.to_datetime(['2022-02-15', '2022-02-16']))
+            # Create MultiIndex columns like PricesYahoo returns for multiple symbols
+            columns = pd.MultiIndex.from_tuples([
+                ('MSFT', 'open'), ('MSFT', 'high'), ('MSFT', 'low'), ('MSFT', 'close'), ('MSFT', 'volume'),
+                ('AAPL', 'open'), ('AAPL', 'high'), ('AAPL', 'low'), ('AAPL', 'close'), ('AAPL', 'volume')
+            ], names=['symbol', None])
+            mock_data = pd.DataFrame([
+                [300.01, 300.80, 297.02, 300.47, 27058300, 150.01, 150.80, 149.02, 150.47, 17058300],
+                [298.37, 300.87, 293.68, 299.50, 29982100, 148.37, 150.87, 147.68, 149.50, 19982100]
+            ], index=pd.to_datetime(['2022-02-15', '2022-02-16']), columns=columns)
             mock_prices.get.return_value = mock_data
             
             with patch('collectors.yahoo.collector.PricesYahoo', return_value=mock_prices):
