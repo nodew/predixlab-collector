@@ -187,6 +187,7 @@ class YahooCollector:
                 time.sleep(self.delay)
 
                 prices = PricesYahoo(symbol)
+                # Note: market-prices uses "1D" format (uppercase) for daily interval
                 data = prices.get("1D", start=start, end=end)
 
                 if isinstance(data, pd.DataFrame) and not data.empty:
@@ -284,7 +285,7 @@ class YahooCollector:
 
         Routes to the appropriate implementation based on the interval setting.
         For daily data (1d), uses the market-prices library.
-        For weekly data (1wk), uses the yahooquery library.
+        For weekly data (1wk), uses the yahooquery library (market-prices doesn't support 1wk).
 
         Parameters
         ----------
@@ -302,7 +303,11 @@ class YahooCollector:
         """
         if self.interval == "1wk":
             return self._get_weekly_data_from_yahoo(symbol, start, end)
+        elif self.interval == "1d":
+            return self._get_daily_data_from_yahoo(symbol, start, end)
         else:
+            # For unsupported intervals, default to daily data with a warning
+            logger.warning(f"Interval '{self.interval}' not explicitly supported, defaulting to daily data collection")
             return self._get_daily_data_from_yahoo(symbol, start, end)
 
     def _get_existing_data_info(self, symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str], Optional[str]]:
