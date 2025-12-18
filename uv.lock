@@ -283,6 +283,23 @@ wheels = [
 ]
 
 [[package]]
+name = "exchange-calendars"
+version = "4.11.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "korean-lunar-calendar" },
+    { name = "numpy" },
+    { name = "pandas" },
+    { name = "pyluach" },
+    { name = "toolz" },
+    { name = "tzdata" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fa/14/a9de4bb3b86ce661d33b9d862562eba6aad2ade629a0a821627604a108b5/exchange_calendars-4.11.3.tar.gz", hash = "sha256:53a8f68f86edaf265b0b20cb3641ce34c4b9205b039b0a50f36fc99d114b77bd", size = 4090661, upload-time = "2025-11-10T14:44:16.009Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e3/dd/b30915627128b388c235ee047ca721a40a4960e8b55ea9fa4a005466774b/exchange_calendars-4.11.3-py3-none-any.whl", hash = "sha256:c40d9f1b50238f578f9f8c772aa895533ab03db4910da43825ca59f7ebd9e82f", size = 209667, upload-time = "2025-11-10T14:44:14.694Z" },
+]
+
+[[package]]
 name = "fire"
 version = "0.7.1"
 source = { registry = "https://pypi.org/simple" }
@@ -328,6 +345,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/dc/fe/0f5a938c54105553436dbff7a61dc4fed4b1b2c98852f8833beaf4d5968f/joblib-1.5.1.tar.gz", hash = "sha256:f4f86e351f39fe3d0d32a9f2c3d8af1ee4cec285aafcb27003dda5205576b444", size = 330475, upload-time = "2025-05-23T12:04:37.097Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7d/4f/1195bbac8e0c2acc5f740661631d8d750dc38d4a32b23ee5df3cde6f4e0d/joblib-1.5.1-py3-none-any.whl", hash = "sha256:4719a31f054c7d766948dcd83e9613686b27114f190f717cec7eaa2084f8a74a", size = 307746, upload-time = "2025-05-23T12:04:35.124Z" },
+]
+
+[[package]]
+name = "korean-lunar-calendar"
+version = "0.3.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/5a/93/a0bd2bd53ab19330e83ecc5652b7774ae86fd2fee19bc05ad220cf9db08b/korean_lunar_calendar-0.3.1.tar.gz", hash = "sha256:eb2c485124a061016926bdea6d89efdf9b9fdbf16db55895b6cf1e5bec17b857", size = 9877, upload-time = "2022-09-16T10:53:25.713Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9c/96/30f3fe51b336bb6da4714f4fdad7bbdce8f13af79af2eb75e22908f3f9f4/korean_lunar_calendar-0.3.1-py3-none-any.whl", hash = "sha256:392757135c492c4f42a604e6038042953c35c6f449dda5f27e3f86a7f9c943e5", size = 9033, upload-time = "2022-09-16T10:53:23.771Z" },
 ]
 
 [[package]]
@@ -403,6 +429,23 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/25/6c/6f9610fbf1de002048e80585ea4719591921a0316a8565968737d9f125ca/lxml-6.0.1-cp314-cp314-win32.whl", hash = "sha256:537b6cf1c5ab88cfd159195d412edb3e434fee880f206cbe68dff9c40e17a68a", size = 3669595, upload-time = "2025-08-22T10:34:41.783Z" },
     { url = "https://files.pythonhosted.org/packages/72/a5/506775e3988677db24dc75a7b03e04038e0b3d114ccd4bccea4ce0116c15/lxml-6.0.1-cp314-cp314-win_amd64.whl", hash = "sha256:911d0a2bb3ef3df55b3d97ab325a9ca7e438d5112c102b8495321105d25a441b", size = 4079818, upload-time = "2025-08-22T10:34:44.04Z" },
     { url = "https://files.pythonhosted.org/packages/0a/44/9613f300201b8700215856e5edd056d4e58dd23368699196b58877d4408b/lxml-6.0.1-cp314-cp314-win_arm64.whl", hash = "sha256:2834377b0145a471a654d699bdb3a2155312de492142ef5a1d426af2c60a0a31", size = 3753901, upload-time = "2025-08-22T10:34:45.799Z" },
+]
+
+[[package]]
+name = "market-prices"
+version = "0.12.11"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "exchange-calendars" },
+    { name = "numpy" },
+    { name = "pandas" },
+    { name = "tzdata" },
+    { name = "valimp" },
+    { name = "yahooquery" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/63/7d/8d6fb4f56674ca843bc59454a191661909acb1d48b51f4f607516a2abfa8/market_prices-0.12.11.tar.gz", hash = "sha256:d834e78ebb14defc480cbedbbb5f8016161c039e7e7abb03468a2cb3f7d71e02", size = 1719092, upload-time = "2025-10-02T18:00:43.448Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/29/a2/7a53c11a225351459b5b4546a7de73497dd2707df81df8f4ae9316c03a22/market_prices-0.12.11-py3-none-any.whl", hash = "sha256:4bd78201a774d69dcb298a1aca17b26c568a269452a416dc85eaf5a4800079f6", size = 161278, upload-time = "2025-10-02T18:00:42.036Z" },
 ]
 
 [[package]]
@@ -635,6 +678,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pyluach"
+version = "2.3.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/11/11/42568c1568a75f8803c59f26d29af01a0890352b7a8e03d41ecda8bfb5dd/pyluach-2.3.0.tar.gz", hash = "sha256:ec6e30669d1df50c9ca160486da44a8195bb4c7a5d3d533990d0c5b03accd281", size = 26910, upload-time = "2025-09-09T20:24:39.651Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8a/c8/f96208ade3ca4c23b372497d0788bcf0f2e0ff4310e5ee693366bc33fdf0/pyluach-2.3.0-py3-none-any.whl", hash = "sha256:4497b731aef59508b079dbf5f00bc5bf4329ac45090a6cd37b5a83756f0e69ab", size = 25914, upload-time = "2025-09-09T20:24:37.831Z" },
+]
+
+[[package]]
 name = "pymongo"
 version = "4.15.3"
 source = { registry = "https://pypi.org/simple" }
@@ -769,6 +821,7 @@ dependencies = [
     { name = "joblib" },
     { name = "loguru" },
     { name = "lxml" },
+    { name = "market-prices" },
     { name = "numpy" },
     { name = "pandas" },
     { name = "pydantic-settings" },
@@ -796,6 +849,7 @@ requires-dist = [
     { name = "joblib", specifier = ">=1.4.2" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "lxml", specifier = ">=6.0.0" },
+    { name = "market-prices", specifier = ">=0.12.11" },
     { name = "numpy", specifier = ">=2.3.0" },
     { name = "pandas", specifier = ">=2.3.0" },
     { name = "pydantic-settings", specifier = ">=2.10.1" },
@@ -879,6 +933,15 @@ wheels = [
 ]
 
 [[package]]
+name = "toolz"
+version = "1.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/11/d6/114b492226588d6ff54579d95847662fc69196bdeec318eb45393b24c192/toolz-1.1.0.tar.gz", hash = "sha256:27a5c770d068c110d9ed9323f24f1543e83b2f300a687b7891c1a6d56b697b5b", size = 52613, upload-time = "2025-10-17T04:03:21.661Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fb/12/5911ae3eeec47800503a238d971e51722ccea5feb8569b735184d5fcdbc0/toolz-1.1.0-py3-none-any.whl", hash = "sha256:15ccc861ac51c53696de0a5d6d4607f99c210739caf987b5d2054f3efed429d8", size = 58093, upload-time = "2025-10-17T04:03:20.435Z" },
+]
+
+[[package]]
 name = "tqdm"
 version = "4.67.1"
 source = { registry = "https://pypi.org/simple" }
@@ -927,6 +990,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/15/22/9ee70a2574a4f4599c47dd506532914ce044817c7752a79b6a51286319bc/urllib3-2.5.0.tar.gz", hash = "sha256:3fc47733c7e419d4bc3f6b3dc2b4f890bb743906a30d56ba4a5bfa4bbff92760", size = 393185, upload-time = "2025-06-18T14:07:41.644Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a7/c2/fe1e52489ae3122415c51f387e221dd0773709bad6c6cdaa599e8a2c5185/urllib3-2.5.0-py3-none-any.whl", hash = "sha256:e6b01673c0fa6a13e374b50871808eb3bf7046c4b125b216f6bf1cc604cff0dc", size = 129795, upload-time = "2025-06-18T14:07:40.39Z" },
+]
+
+[[package]]
+name = "valimp"
+version = "0.4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d5/e4/cad84d58a591b5ea737237f19c7c920d8a88942d10cdf980d56434ba0e3c/valimp-0.4.tar.gz", hash = "sha256:981b726c87e5ca28941dda02f67f0c8924e3db64cc86247e8d53a44c5f1964ef", size = 56875, upload-time = "2025-10-02T21:10:25.252Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/91/91/304bcc03c87d0106a372e0e1029fab9d8e9175bb8b413305700ddee4f316/valimp-0.4-py3-none-any.whl", hash = "sha256:6b6c82606085d6e51a407fa116cdedfd9b88d3f6e464cfd67f04365f00186d1e", size = 15914, upload-time = "2025-10-02T21:10:24.084Z" },
 ]
 
 [[package]]

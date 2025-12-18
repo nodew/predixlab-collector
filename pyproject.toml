@@ -21,6 +21,7 @@ dependencies = [
     "pydantic-settings>=2.10.1",
     "pymongo>=4.10.1",
     "azure-communication-email>=1.0.0",
+    "market-prices>=0.12.11",
 ]
 
 [project.optional-dependencies]

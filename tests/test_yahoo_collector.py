@@ -288,6 +288,214 @@ class TestYahooCollector:
         assert pd.Timestamp('2024-01-03') in dates
         assert pd.Timestamp('2024-01-04') in dates
 
+    def test_get_daily_data_from_yahoo_success(self, tmp_path):
+        """Test _get_daily_data_from_yahoo returns data using market-prices."""
+        with patch('collectors.yahoo.collector.settings') as mock_settings:
+            mock_settings.us_index_path = str(tmp_path / "us_index.txt")
+            mock_settings.us_stock_data_dir = str(tmp_path / "stock_data")
+            mock_settings.us_stock_weekly_data_dir = str(tmp_path / "stock_weekly_data")
+            
+            (tmp_path / "us_index.txt").write_text("AAPL\t2015-01-01\t2099-12-31\n")
+            
+            collector = YahooCollector(interval="1d", delay=0.01)
+            
+            # Mock PricesYahoo
+            mock_prices = MagicMock()
+            mock_data = pd.DataFrame({
+                'open': [300.01, 298.37],
+                'high': [300.80, 300.87],
+                'low': [297.02, 293.68],
+                'close': [300.47, 299.50],
+                'volume': [27058300, 29982100]
+            }, index=pd.to_datetime(['2022-02-15', '2022-02-16']))
+            mock_prices.get.return_value = mock_data
+            
+            with patch('collectors.yahoo.collector.PricesYahoo', return_value=mock_prices):
+                result = collector._get_daily_data_from_yahoo("MSFT", "2022-02-15", "2022-02-16")
+            
+            assert result is not None
+            assert not result.empty
+            assert 'symbol' in result.columns
+            assert result['symbol'].iloc[0] == "MSFT"
+            assert len(result) == 2
+
+    def test_get_daily_data_from_yahoo_empty_data(self, tmp_path):
+        """Test _get_daily_data_from_yahoo returns empty DataFrame when no data."""
+        with patch('collectors.yahoo.collector.settings') as mock_settings:
+            mock_settings.us_index_path = str(tmp_path / "us_index.txt")
+            mock_settings.us_stock_data_dir = str(tmp_path / "stock_data")
+            mock_settings.us_stock_weekly_data_dir = str(tmp_path / "stock_weekly_data")
+            
+            (tmp_path / "us_index.txt").write_text("AAPL\t2015-01-01\t2099-12-31\n")
+            
+            collector = YahooCollector(interval="1d", delay=0.01)
+            
+            # Mock PricesYahoo returning empty DataFrame
+            mock_prices = MagicMock()
+            mock_prices.get.return_value = pd.DataFrame()
+            
+            with patch('collectors.yahoo.collector.PricesYahoo', return_value=mock_prices):
+                result = collector._get_daily_data_from_yahoo("MSFT", "2022-02-15", "2022-02-16")
+            
+            assert result is not None
+            assert result.empty
+
+    def test_get_weekly_data_from_yahoo_success(self, tmp_path):
+        """Test _get_weekly_data_from_yahoo returns data using yahooquery."""
+        with patch('collectors.yahoo.collector.settings') as mock_settings:
+            mock_settings.us_index_path = str(tmp_path / "us_index.txt")
+            mock_settings.us_stock_data_dir = str(tmp_path / "stock_data")
+            mock_settings.us_stock_weekly_data_dir = str(tmp_path / "stock_weekly_data")
+            
+            (tmp_path / "us_index.txt").write_text("AAPL\t2015-01-01\t2099-12-31\n")
+            
+            collector = YahooCollector(interval="1wk", delay=0.01)
+            
+            # Mock Ticker
+            mock_ticker_instance = MagicMock()
+            mock_data = pd.DataFrame({
+                'date': pd.to_datetime(['2022-02-14', '2022-02-21']),
+                'open': [300.01, 298.37],
+                'high': [300.80, 300.87],
+                'low': [297.02, 293.68],
+                'close': [300.47, 299.50],
+                'volume': [27058300, 29982100]
+            })
+            mock_ticker_instance.history.return_value = mock_data.set_index('date')
+            
+            with patch('collectors.yahoo.collector.Ticker', return_value=mock_ticker_instance):
+                result = collector._get_weekly_data_from_yahoo("MSFT", "2022-02-14", "2022-02-28")
+            
+            assert result is not None
+            assert not result.empty
+            assert 'symbol' in result.columns
+
+    def test_get_data_from_yahoo_dispatches_daily(self, tmp_path):
+        """Test _get_data_from_yahoo calls _get_daily_data_from_yahoo for 1d interval."""
+        with patch('collectors.yahoo.collector.settings') as mock_settings:
+            mock_settings.us_index_path = str(tmp_path / "us_index.txt")
+            mock_settings.us_stock_data_dir = str(tmp_path / "stock_data")
+            mock_settings.us_stock_weekly_data_dir = str(tmp_path / "stock_weekly_data")
+            
+            (tmp_path / "us_index.txt").write_text("AAPL\t2015-01-01\t2099-12-31\n")
+            
+            collector = YahooCollector(interval="1d", delay=0.01)
+            
+            with patch.object(collector, '_get_daily_data_from_yahoo') as mock_daily:
+                mock_daily.return_value = pd.DataFrame({'date': ['2024-01-01'], 'close': [100]})
+                result = collector._get_data_from_yahoo("AAPL", "2024-01-01", "2024-01-31")
+                mock_daily.assert_called_once_with("AAPL", "2024-01-01", "2024-01-31")
+
+    def test_get_data_from_yahoo_dispatches_weekly(self, tmp_path):
+        """Test _get_data_from_yahoo calls _get_weekly_data_from_yahoo for 1wk interval."""
+        with patch('collectors.yahoo.collector.settings') as mock_settings:
+            mock_settings.us_index_path = str(tmp_path / "us_index.txt")
+            mock_settings.us_stock_data_dir = str(tmp_path / "stock_data")
+            mock_settings.us_stock_weekly_data_dir = str(tmp_path / "stock_weekly_data")
+            
+            (tmp_path / "us_index.txt").write_text("AAPL\t2015-01-01\t2099-12-31\n")
+            
+            collector = YahooCollector(interval="1wk", delay=0.01)
+            
+            with patch.object(collector, '_get_weekly_data_from_yahoo') as mock_weekly:
+                mock_weekly.return_value = pd.DataFrame({'date': ['2024-01-01'], 'close': [100]})
+                result = collector._get_data_from_yahoo("AAPL", "2024-01-01", "2024-01-31")
+                mock_weekly.assert_called_once_with("AAPL", "2024-01-01", "2024-01-31")
+
+    def test_get_batch_daily_data_from_yahoo_success(self, tmp_path):
+        """Test _get_batch_daily_data_from_yahoo returns data using market-prices."""
+        with patch('collectors.yahoo.collector.settings') as mock_settings:
+            mock_settings.us_index_path = str(tmp_path / "us_index.txt")
+            mock_settings.us_stock_data_dir = str(tmp_path / "stock_data")
+            mock_settings.us_stock_weekly_data_dir = str(tmp_path / "stock_weekly_data")
+            
+            (tmp_path / "us_index.txt").write_text("AAPL\t2015-01-01\t2099-12-31\n")
+            
+            collector = YahooCollector(interval="1d", delay=0.01)
+            
+            # Mock PricesYahoo with MultiIndex columns (realistic for multiple symbols)
+            mock_prices = MagicMock()
+            # Create MultiIndex columns like PricesYahoo returns for multiple symbols
+            columns = pd.MultiIndex.from_tuples([
+                ('MSFT', 'open'), ('MSFT', 'high'), ('MSFT', 'low'), ('MSFT', 'close'), ('MSFT', 'volume'),
+                ('AAPL', 'open'), ('AAPL', 'high'), ('AAPL', 'low'), ('AAPL', 'close'), ('AAPL', 'volume')
+            ], names=['symbol', None])
+            mock_data = pd.DataFrame([
+                [300.01, 300.80, 297.02, 300.47, 27058300, 150.01, 150.80, 149.02, 150.47, 17058300],
+                [298.37, 300.87, 293.68, 299.50, 29982100, 148.37, 150.87, 147.68, 149.50, 19982100]
+            ], index=pd.to_datetime(['2022-02-15', '2022-02-16']), columns=columns)
+            mock_prices.get.return_value = mock_data
+            
+            with patch('collectors.yahoo.collector.PricesYahoo', return_value=mock_prices):
+                result = collector._get_batch_daily_data_from_yahoo(["MSFT", "AAPL"], "2022-02-15", "2022-02-16")
+            
+            assert result is not None
+            assert not result.empty
+            assert 'symbol' in result.columns
+
+    def test_get_batch_weekly_data_from_yahoo_success(self, tmp_path):
+        """Test _get_batch_weekly_data_from_yahoo returns data using yahooquery."""
+        with patch('collectors.yahoo.collector.settings') as mock_settings:
+            mock_settings.us_index_path = str(tmp_path / "us_index.txt")
+            mock_settings.us_stock_data_dir = str(tmp_path / "stock_data")
+            mock_settings.us_stock_weekly_data_dir = str(tmp_path / "stock_weekly_data")
+            
+            (tmp_path / "us_index.txt").write_text("AAPL\t2015-01-01\t2099-12-31\n")
+            
+            collector = YahooCollector(interval="1wk", delay=0.01)
+            
+            # Mock Ticker for batch
+            mock_ticker_instance = MagicMock()
+            mock_data = pd.DataFrame({
+                'date': pd.to_datetime(['2022-02-14', '2022-02-21']),
+                'open': [300.01, 298.37],
+                'high': [300.80, 300.87],
+                'low': [297.02, 293.68],
+                'close': [300.47, 299.50],
+                'volume': [27058300, 29982100],
+                'symbol': ['MSFT', 'MSFT']
+            })
+            mock_ticker_instance.history.return_value = mock_data.set_index(['symbol', 'date'])
+            
+            with patch('collectors.yahoo.collector.Ticker', return_value=mock_ticker_instance):
+                result = collector._get_batch_weekly_data_from_yahoo(["MSFT"], "2022-02-14", "2022-02-28")
+            
+            assert result is not None
+            assert not result.empty
+            assert 'symbol' in result.columns
+
+    def test_get_batch_data_from_yahoo_dispatches_daily(self, tmp_path):
+        """Test _get_batch_data_from_yahoo calls _get_batch_daily_data_from_yahoo for 1d interval."""
+        with patch('collectors.yahoo.collector.settings') as mock_settings:
+            mock_settings.us_index_path = str(tmp_path / "us_index.txt")
+            mock_settings.us_stock_data_dir = str(tmp_path / "stock_data")
+            mock_settings.us_stock_weekly_data_dir = str(tmp_path / "stock_weekly_data")
+            
+            (tmp_path / "us_index.txt").write_text("AAPL\t2015-01-01\t2099-12-31\n")
+            
+            collector = YahooCollector(interval="1d", delay=0.01)
+            
+            with patch.object(collector, '_get_batch_daily_data_from_yahoo') as mock_batch_daily:
+                mock_batch_daily.return_value = pd.DataFrame({'date': ['2024-01-01'], 'close': [100], 'symbol': ['AAPL']})
+                result = collector._get_batch_data_from_yahoo(["AAPL", "MSFT"], "2024-01-01", "2024-01-31")
+                mock_batch_daily.assert_called_once_with(["AAPL", "MSFT"], "2024-01-01", "2024-01-31")
+
+    def test_get_batch_data_from_yahoo_dispatches_weekly(self, tmp_path):
+        """Test _get_batch_data_from_yahoo calls _get_batch_weekly_data_from_yahoo for 1wk interval."""
+        with patch('collectors.yahoo.collector.settings') as mock_settings:
+            mock_settings.us_index_path = str(tmp_path / "us_index.txt")
+            mock_settings.us_stock_data_dir = str(tmp_path / "stock_data")
+            mock_settings.us_stock_weekly_data_dir = str(tmp_path / "stock_weekly_data")
+            
+            (tmp_path / "us_index.txt").write_text("AAPL\t2015-01-01\t2099-12-31\n")
+            
+            collector = YahooCollector(interval="1wk", delay=0.01)
+            
+            with patch.object(collector, '_get_batch_weekly_data_from_yahoo') as mock_batch_weekly:
+                mock_batch_weekly.return_value = pd.DataFrame({'date': ['2024-01-01'], 'close': [100], 'symbol': ['AAPL']})
+                result = collector._get_batch_data_from_yahoo(["AAPL", "MSFT"], "2024-01-01", "2024-01-31")
+                mock_batch_weekly.assert_called_once_with(["AAPL", "MSFT"], "2024-01-01", "2024-01-31")
+
     def test_get_dynamic_batch_size_daily(self, tmp_path):
         """Test dynamic batch size calculation for daily interval."""
         with patch('collectors.yahoo.collector.settings') as mock_settings:

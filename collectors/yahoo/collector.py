@@ -15,6 +15,7 @@ import time
 import requests
 from yahooquery import Ticker
 from dateutil.tz import tzlocal
+from market_prices import PricesYahoo
 
 from config import settings
 from utils import normalize_datetime_to_date
@@ -28,6 +29,10 @@ class YahooCollector:
     ABNORMAL_CHANGE_THRESHOLD = 0.5  # 50% change threshold for abnormal data detection
     RETRY_COUNT = 3
     DELAY_BETWEEN_REQUESTS = 0.5
+    # Interval format for market-prices library (uppercase D)
+    MARKET_PRICES_DAILY_INTERVAL = "1D"
+    # Interval format for yahooquery library
+    YAHOO_WEEKLY_INTERVAL = "1wk"
 
     def __init__(
         self,
@@ -164,8 +169,67 @@ class YahooCollector:
 
         return filtered_data
 
-    def _get_data_from_yahoo(self, symbol: str, start: str, end: str) -> Optional[pd.DataFrame]:
-        """Get stock data from Yahoo Finance.
+    def _get_daily_data_from_yahoo(self, symbol: str, start: str, end: str) -> Optional[pd.DataFrame]:
+        """Get daily stock data from Yahoo Finance using market-prices library.
+
+        Parameters
+        ----------
+        symbol : str
+            Stock symbol
+        start : str
+            Start date (YYYY-MM-DD)
+        end : str
+            End date (YYYY-MM-DD)
+
+        Returns
+        -------
+        Optional[pd.DataFrame]
+            Stock data DataFrame or None if failed
+        """
+        for attempt in range(self.RETRY_COUNT):
+            try:
+                time.sleep(self.delay)
+
+                prices = PricesYahoo(symbol)
+                # Note: market-prices uses "1D" format (uppercase) for daily interval
+                data = prices.get(self.MARKET_PRICES_DAILY_INTERVAL, start=start, end=end)
+
+                if isinstance(data, pd.DataFrame) and not data.empty:
+                    # Reset index to get date as column
+                    data = data.reset_index()
+
+                    # Rename 'date' column if it exists, otherwise use index column
+                    if 'date' not in data.columns and 'index' in data.columns:
+                        data = data.rename(columns={'index': 'date'})
+
+                    # Flatten multi-level columns if present
+                    if isinstance(data.columns, pd.MultiIndex):
+                        data.columns = data.columns.get_level_values(-1)
+
+                    # Add symbol column
+                    data['symbol'] = symbol
+
+                    # The market-prices library returns meaningful date data,
+                    # no need for normalize_datetime_to_date
+                    # Ensure date column is just the date part
+                    if 'date' in data.columns:
+                        data['date'] = pd.to_datetime(data['date']).dt.date
+
+                    return data
+                else:
+                    logger.warning(f"Empty or invalid daily data for {symbol} (attempt {attempt + 1}/{self.RETRY_COUNT})")
+                    return pd.DataFrame()
+
+            except Exception as e:
+                logger.warning(f"Error fetching daily data for {symbol} (attempt {attempt + 1}/{self.RETRY_COUNT}): {e}")
+                if attempt < self.RETRY_COUNT - 1:
+                    time.sleep(self.delay * (attempt + 1))
+
+        logger.error(f"Failed to fetch daily data for {symbol} after {self.RETRY_COUNT} attempts")
+        return None
+
+    def _get_weekly_data_from_yahoo(self, symbol: str, start: str, end: str) -> Optional[pd.DataFrame]:
+        """Get weekly stock data from Yahoo Finance using yahooquery library.
 
         Parameters
         ----------
@@ -186,7 +250,7 @@ class YahooCollector:
                 time.sleep(self.delay)
 
                 ticker = Ticker(symbol, asynchronous=False)
-                data = ticker.history(interval=self.interval, start=start, end=end)
+                data = ticker.history(interval=self.YAHOO_WEEKLY_INTERVAL, start=start, end=end)
                 filtered_data = None
 
                 if isinstance(data, pd.DataFrame) and not data.empty:
@@ -210,15 +274,45 @@ class YahooCollector:
                 if filtered_data is not None and not filtered_data.empty:
                     return filtered_data
                 else:
-                    logger.warning(f"Empty or invalid data for {symbol} (attempt {attempt + 1}/{self.RETRY_COUNT})")
+                    logger.warning(f"Empty or invalid weekly data for {symbol} (attempt {attempt + 1}/{self.RETRY_COUNT})")
                     return pd.DataFrame()  # Return empty DataFrame if no valid data
             except Exception as e:
-                logger.warning(f"Error fetching {symbol} (attempt {attempt + 1}/{self.RETRY_COUNT}): {e}")
+                logger.warning(f"Error fetching weekly data for {symbol} (attempt {attempt + 1}/{self.RETRY_COUNT}): {e}")
                 if attempt < self.RETRY_COUNT - 1:
                     time.sleep(self.delay * (attempt + 1))
 
-        logger.error(f"Failed to fetch data for {symbol} after {self.RETRY_COUNT} attempts")
+        logger.error(f"Failed to fetch weekly data for {symbol} after {self.RETRY_COUNT} attempts")
         return None
+
+    def _get_data_from_yahoo(self, symbol: str, start: str, end: str) -> Optional[pd.DataFrame]:
+        """Get stock data from Yahoo Finance.
+
+        Routes to the appropriate implementation based on the interval setting.
+        For daily data (1d), uses the market-prices library.
+        For weekly data (1wk), uses the yahooquery library (market-prices doesn't support 1wk).
+
+        Parameters
+        ----------
+        symbol : str
+            Stock symbol
+        start : str
+            Start date (YYYY-MM-DD)
+        end : str
+            End date (YYYY-MM-DD)
+
+        Returns
+        -------
+        Optional[pd.DataFrame]
+            Stock data DataFrame or None if failed
+        """
+        if self.interval == "1wk":
+            return self._get_weekly_data_from_yahoo(symbol, start, end)
+        elif self.interval == "1d":
+            return self._get_daily_data_from_yahoo(symbol, start, end)
+        else:
+            # For unsupported intervals, default to daily data with a warning
+            logger.warning(f"Interval '{self.interval}' not explicitly supported, defaulting to daily data collection")
+            return self._get_daily_data_from_yahoo(symbol, start, end)
 
     def _get_existing_data_info(self, symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str], Optional[str]]:
         """Get information about existing data file.
@@ -547,8 +641,76 @@ class YahooCollector:
             else:
                 logger.error(f"Failed to re-download data for {symbol}")
 
-    def _get_batch_data_from_yahoo(self, symbols: List[str], start: str, end: str) -> Optional[pd.DataFrame]:
-        """Get batch stock data from Yahoo Finance for multiple symbols.
+    def _get_batch_daily_data_from_yahoo(self, symbols: List[str], start: str, end: str) -> Optional[pd.DataFrame]:
+        """Get batch daily stock data from Yahoo Finance for multiple symbols using market-prices.
+
+        Parameters
+        ----------
+        symbols : List[str]
+            List of stock symbols
+        start : str
+            Start date (YYYY-MM-DD)
+        end : str
+            End date (YYYY-MM-DD)
+
+        Returns
+        -------
+        Optional[pd.DataFrame]
+            Combined stock data DataFrame or None if failed
+        """
+        if not symbols:
+            return None
+
+        for attempt in range(self.RETRY_COUNT):
+            try:
+                time.sleep(self.delay)
+
+                # PricesYahoo accepts multiple symbols at once
+                prices = PricesYahoo(symbols)
+                # Note: market-prices uses "1D" format (uppercase) for daily interval
+                data = prices.get(self.MARKET_PRICES_DAILY_INTERVAL, start=start, end=end)
+
+                if isinstance(data, pd.DataFrame) and not data.empty:
+                    # Reset index to get date as column
+                    data = data.reset_index()
+
+                    # Rename 'date' column if it exists, otherwise use index column
+                    if 'date' not in data.columns and 'index' in data.columns:
+                        data = data.rename(columns={'index': 'date'})
+
+                    # For multiple symbols, market-prices returns MultiIndex columns with symbol as top level
+                    # We need to reshape the data to have a 'symbol' column
+                    if isinstance(data.columns, pd.MultiIndex):
+                        # Stack the symbol level to convert from wide to long format
+                        date_col = data.columns[0]  # First column is the date
+                        data = data.set_index(date_col)
+                        data = data.stack(level=0, future_stack=True).reset_index()
+                        data.columns = ['date', 'symbol', 'open', 'high', 'low', 'close', 'volume']
+                    elif len(symbols) == 1:
+                        # Single symbol case - add symbol column
+                        data['symbol'] = symbols[0]
+
+                    # The market-prices library returns meaningful date data,
+                    # no need for normalize_datetime_to_date
+                    # Ensure date column is just the date part
+                    if 'date' in data.columns:
+                        data['date'] = pd.to_datetime(data['date']).dt.date
+
+                    return data
+                else:
+                    logger.warning(f"Empty or invalid batch daily data for {symbols} (attempt {attempt + 1}/{self.RETRY_COUNT})")
+                    return None
+
+            except Exception as e:
+                logger.warning(f"Error fetching batch daily data for {symbols} (attempt {attempt + 1}/{self.RETRY_COUNT}): {e}")
+                if attempt < self.RETRY_COUNT - 1:
+                    time.sleep(self.delay * (attempt + 1))
+
+        logger.error(f"Failed to fetch batch daily data for {symbols} after {self.RETRY_COUNT} attempts")
+        return None
+
+    def _get_batch_weekly_data_from_yahoo(self, symbols: List[str], start: str, end: str) -> Optional[pd.DataFrame]:
+        """Get batch weekly stock data from Yahoo Finance for multiple symbols using yahooquery.
 
         Parameters
         ----------
@@ -574,7 +736,7 @@ class YahooCollector:
                 # Use space-separated string for multiple symbols
                 symbols_str = " ".join(symbols)
                 ticker = Ticker(symbols_str, asynchronous=False)
-                data = ticker.history(interval=self.interval, start=start, end=end)
+                data = ticker.history(interval=self.YAHOO_WEEKLY_INTERVAL, start=start, end=end)
                 filtered_data = None
                 if isinstance(data, pd.DataFrame) and not data.empty:
                     # Check if we have MultiIndex (symbol, date)
@@ -594,16 +756,49 @@ class YahooCollector:
                 if filtered_data is not None and not filtered_data.empty:
                     return filtered_data
                 else:
-                    logger.warning(f"Empty or invalid batch data for {symbols} (attempt {attempt + 1}/{self.RETRY_COUNT})")
-                    return None  # Return empty DataFrame if no valid data
+                    logger.warning(f"Empty or invalid batch weekly data for {symbols} (attempt {attempt + 1}/{self.RETRY_COUNT})")
+                    return None  # Return None if no valid data
 
             except Exception as e:
-                logger.warning(f"Error fetching batch data for {symbols} (attempt {attempt + 1}/{self.RETRY_COUNT}): {e}")
+                logger.warning(f"Error fetching batch weekly data for {symbols} (attempt {attempt + 1}/{self.RETRY_COUNT}): {e}")
                 if attempt < self.RETRY_COUNT - 1:
                     time.sleep(self.delay * (attempt + 1))
 
-        logger.error(f"Failed to fetch batch data for {symbols} after {self.RETRY_COUNT} attempts")
+        logger.error(f"Failed to fetch batch weekly data for {symbols} after {self.RETRY_COUNT} attempts")
         return None
+
+    def _get_batch_data_from_yahoo(self, symbols: List[str], start: str, end: str) -> Optional[pd.DataFrame]:
+        """Get batch stock data from Yahoo Finance for multiple symbols.
+
+        Routes to the appropriate implementation based on the interval setting.
+        For daily data (1d), uses the market-prices library.
+        For weekly data (1wk), uses the yahooquery library (market-prices doesn't support 1wk).
+
+        Parameters
+        ----------
+        symbols : List[str]
+            List of stock symbols
+        start : str
+            Start date (YYYY-MM-DD)
+        end : str
+            End date (YYYY-MM-DD)
+
+        Returns
+        -------
+        Optional[pd.DataFrame]
+            Combined stock data DataFrame or None if failed
+        """
+        if not symbols:
+            return None
+
+        if self.interval == "1wk":
+            return self._get_batch_weekly_data_from_yahoo(symbols, start, end)
+        elif self.interval == "1d":
+            return self._get_batch_daily_data_from_yahoo(symbols, start, end)
+        else:
+            # For unsupported intervals, default to daily data with a warning
+            logger.warning(f"Interval '{self.interval}' not explicitly supported for batch, defaulting to daily data collection")
+            return self._get_batch_daily_data_from_yahoo(symbols, start, end)
 
     def _get_dynamic_batch_size(self, start_date: str, end_date: str) -> int:
         """Calculate optimal batch size based on date range and interval.
