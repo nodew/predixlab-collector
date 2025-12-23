@@ -19,6 +19,8 @@ from pymongo import MongoClient
 
 from collectors.us_index import collect_us_index
 from collectors.us_calendar import collect_us_calendar
+from collectors.cn_index import collect_cn_index
+from collectors.cn_calendar import collect_cn_calendar
 from collectors.yahoo import collect_yahoo_data, normalize_yahoo_data
 from config import settings
 from notification import send_email_notification
@@ -158,6 +160,26 @@ class QStockMarketDataService:
             logger.info("✅ US index collection completed successfully!")
         except Exception as e:
             logger.error(f"❌ US index collection failed: {e}")
+            raise
+
+    def collect_cn_index(self, index: str = "csi300") -> None:
+        """Collect CN index constituents (CSI 300 or CSI 500).
+
+        This method fetches the latest constituents of the specified Chinese stock index
+        from Eastmoney and saves to the configured path.
+
+        Parameters
+        ----------
+        index : str, optional
+            Index to collect, either "csi300" or "csi500". Defaults to "csi300".
+        """
+        logger.info(f"Starting CN index ({index}) collection...")
+        try:
+            collect_cn_index(index=index)
+            logger.info(f"✅ CN index ({index}) collection completed successfully!")
+        except Exception as e:
+            logger.error(f"❌ CN index ({index}) collection failed: {e}")
+            raise
 
     def collect_us_calendar(self, start_date: str = "2015-01-01", interval: str = "1d"):
         """Collect US stock trading calendar dates.
@@ -178,6 +200,27 @@ class QStockMarketDataService:
             logger.info("✅ US trading calendar collection completed successfully!")
         except Exception as e:
             logger.error(f"❌ US trading calendar collection failed: {e}")
+            raise
+
+    def collect_cn_calendar(self, start_date: str = "2015-01-01", interval: str = "1d"):
+        """Collect Chinese stock trading calendar dates.
+
+        This method fetches Chinese stock trading calendar dates from start_date to current date
+        using Yahoo Finance data and saves to the configured cn_calendar_path.
+
+        Parameters
+        ----------
+        start_date : str, optional
+            Start date for collecting calendar data, by default "2015-01-01"
+        interval : str, optional
+            Data interval, by default "1d". Supported values: "1d", "1wk", "1mo"
+        """
+        logger.info("Starting CN trading calendar collection...")
+        try:
+            collect_cn_calendar(start_date=start_date, interval=interval)
+            logger.info("✅ CN trading calendar collection completed successfully!")
+        except Exception as e:
+            logger.error(f"❌ CN trading calendar collection failed: {e}")
             raise
 
     def collect_yahoo_data(

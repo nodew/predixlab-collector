@@ -1,20 +1,22 @@
 # QStock Collector
 
-一个专业的美股市场数据收集和处理服务，从 qstock 项目中提取并独立开发，使用 Yahoo Finance 和 yahooquery 进行高效的股票数据收集。
+一个专业的股票市场数据收集和处理服务，从 qstock 项目中提取并独立开发，使用 Yahoo Finance 和 yahooquery 进行高效的股票数据收集。支持美股和 A 股市场。
 
 ## 🚀 功能特性
 
 ### 核心功能
 - **美股数据收集**: 支持 S&P 500 和 NASDAQ 100 成分股数据收集
+- **A 股数据收集**: 支持沪深 300 和中证 500 成分股数据收集
 - **智能增量更新**: 自动检测本地数据，支持增量更新和全量下载
 - **数据标准化**: 提供完整的数据清洗、异常检测和标准化处理
-- **交易日历管理**: 自动获取和更新美股交易日历
+- **交易日历管理**: 自动获取和更新美股/A 股交易日历
 - **批量处理**: 支持批量下载和并行数据处理
 - **异常检测**: 智能检测价格异常并自动修正
 
 ### 数据源
 - **Yahoo Finance**: 使用 yahooquery 库获取股票历史数据
 - **Wikipedia**: 获取 S&P 500 和 NASDAQ 100 最新成分股列表
+- **Eastmoney**: 获取沪深 300 和中证 500 最新成分股列表
 - **自动异常处理**: 检测和修正常见的数据异常（如价格单位错误等）
 
 ## 📋 环境要求
@@ -62,7 +64,19 @@ python main.py update_daily_data
 python main.py collect_us_index
 ```
 
-#### 2. 更新交易日历
+#### 2. 更新 A 股指数成分股
+```bash
+# 收集沪深 300 成分股（默认）
+python main.py collect_cn_index
+
+# 指定收集沪深 300 成分股
+python main.py collect_cn_index --index csi300
+
+# 收集中证 500 成分股
+python main.py collect_cn_index --index csi500
+```
+
+#### 3. 更新美股交易日历
 ```bash
 # 从 2015-01-01 开始更新
 python main.py collect_us_calendar
@@ -71,7 +85,16 @@ python main.py collect_us_calendar
 python main.py collect_us_calendar --start_date "2020-01-01"
 ```
 
-#### 3. 收集股票数据
+#### 4. 更新 A 股交易日历
+```bash
+# 从 2015-01-01 开始更新
+python main.py collect_cn_calendar
+
+# 从指定日期开始更新
+python main.py collect_cn_calendar --start_date "2020-01-01"
+```
+
+#### 5. 收集股票数据
 ```bash
 # 收集所有股票的完整历史数据
 python main.py collect_yahoo_data
@@ -86,7 +109,7 @@ python main.py collect_yahoo_data --limit_nums 10
 python main.py collect_yahoo_data --delay 1.0
 ```
 
-#### 4. 数据标准化处理
+#### 6. 数据标准化处理
 ```bash
 # 标准化所有数据
 python main.py normalize_yahoo_data
@@ -104,9 +127,12 @@ python main.py normalize_yahoo_data --max_workers 8
 ```
 data/
 ├── calendar/           # 交易日历
-│   └── us.txt         # 美股交易日历
+│   ├── us.txt         # 美股交易日历
+│   └── cn.txt         # A 股交易日历
 ├── instruments/        # 股票指数成分股
-│   └── us.txt         # 美股指数成分股（S&P 500 + NASDAQ 100）
+│   ├── us.txt         # 美股指数成分股（S&P 500 + NASDAQ 100）
+│   ├── csi300.txt     # 沪深 300 成分股
+│   └── csi500.txt     # 中证 500 成分股
 ├── stock_data/         # 原始股票数据
 │   └── us_data/       # 美股原始数据
 │       ├── AAPL.csv
@@ -270,12 +296,25 @@ from collectors.yahoo import collect_yahoo_data
 from collectors.yahoo.normalize import normalize_yahoo_data
 from collectors.us_index import collect_us_index
 from collectors.us_calendar import collect_us_calendar
+from collectors.cn_index import collect_cn_index
+from collectors.cn_calendar import collect_cn_calendar
 
-# 更新指数成分股
+# 更新美股指数成分股
 collect_us_index()
 
-# 更新交易日历
+# 更新 A 股指数成分股
+# 收集沪深 300（默认）
+collect_cn_index()
+# 收集沪深 300
+collect_cn_index(index="csi300")
+# 收集中证 500
+collect_cn_index(index="csi500")
+
+# 更新美股交易日历
 collect_us_calendar(start_date="2020-01-01")
+
+# 更新 A 股交易日历
+collect_cn_calendar(start_date="2020-01-01")
 
 # 收集股票数据
 collect_yahoo_data(
@@ -396,7 +435,11 @@ qstock-collector/
 ├── collectors/                 # 数据收集器模块
 │   ├── us_calendar/           # 美股交易日历收集器
 │   │   └── collector.py
+│   ├── cn_calendar/           # A 股交易日历收集器
+│   │   └── collector.py
 │   ├── us_index/              # 美股指数成分股收集器
+│   │   └── collector.py
+│   ├── cn_index/              # A 股指数成分股收集器
 │   │   └── collector.py
 │   └── yahoo/                 # Yahoo Finance 收集器
 │       ├── collector.py       # 数据收集
