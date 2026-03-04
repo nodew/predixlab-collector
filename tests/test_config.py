@@ -177,3 +177,19 @@ class TestSettingsDefaultValues:
         assert settings.mongodb_url == "mongodb://localhost:27017"
         assert settings.database_name == "predixlab"
         assert settings.jobs_collection == "jobs"
+
+    def test_predixlab_data_root_applies_to_defaults(self):
+        """Test data path defaults are derived from predixlab_data root."""
+        settings = Settings(predixlab_data="custom_data")
+        assert settings.calendar_dir == "custom_data/calendar"
+        assert settings.us_calendar_path == "custom_data/calendar/us.txt"
+        assert settings.us_stock_data_dir == "custom_data/stock_data/us_data"
+
+    def test_predixlab_data_root_keeps_individual_overrides(self):
+        """Test per-path overrides still take precedence over root defaults."""
+        settings = Settings(
+            predixlab_data="custom_data",
+            us_stock_data_dir="override/us_data",
+        )
+        assert settings.us_stock_data_dir == "override/us_data"
+        assert settings.us_normalized_data_dir == "custom_data/normalized_data/us_data"

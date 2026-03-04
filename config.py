@@ -4,7 +4,7 @@ Provides centralized configuration management with validation.
 """
 from pathlib import Path
 from typing import List, Optional
-from pydantic import field_validator, Field
+from pydantic import field_validator, Field, model_validator
 from pydantic_settings import BaseSettings
 from loguru import logger
 
@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     All file paths are relative to the project root by default.
     Environment variables can override any setting.
     """
+    predixlab_data: str = "data"
+
     # Calendar paths
     calendar_dir: str = "data/calendar"
     us_calendar_path: str = "data/calendar/us.txt"
@@ -42,6 +44,43 @@ class Settings(BaseSettings):
     cn_normalized_data_dir: str = "data/normalized_data/cn_data"
     us_normalized_weekly_data_dir: str = "data/normalized_weekly_data/us_data"
     cn_normalized_weekly_data_dir: str = "data/normalized_weekly_data/cn_data"
+
+    @model_validator(mode='before')
+    @classmethod
+    def apply_data_root_defaults(cls, data: object) -> object:
+        """Apply default data paths based on predixlab_data root."""
+        if not isinstance(data, dict):
+            return data
+
+        root = data.get("predixlab_data", "data")
+        default_paths = {
+            "calendar_dir": "calendar",
+            "us_calendar_path": "calendar/us.txt",
+            "cn_calendar_path": "calendar/cn.txt",
+            "us_weekly_calendar_path": "calendar/us_weekly.txt",
+            "cn_weekly_calendar_path": "calendar/cn_weekly.txt",
+            "index_dir": "instruments",
+            "us_index_path": "instruments/us.txt",
+            "cn_index_path": "instruments/cn.txt",
+            "stock_data_dir": "stock_data",
+            "stock_weekly_data_dir": "stock_weekly_data",
+            "us_stock_data_dir": "stock_data/us_data",
+            "cn_stock_data_dir": "stock_data/cn_data",
+            "us_stock_weekly_data_dir": "stock_weekly_data/us_data",
+            "cn_stock_weekly_data_dir": "stock_weekly_data/cn_data",
+            "normalized_data_dir": "normalized_data",
+            "normalized_weekly_data_dir": "normalized_weekly_data",
+            "us_normalized_data_dir": "normalized_data/us_data",
+            "cn_normalized_data_dir": "normalized_data/cn_data",
+            "us_normalized_weekly_data_dir": "normalized_weekly_data/us_data",
+            "cn_normalized_weekly_data_dir": "normalized_weekly_data/cn_data",
+        }
+
+        root_path = Path(root)
+        for field_name, relative_path in default_paths.items():
+            data.setdefault(field_name, str(root_path / relative_path))
+
+        return data
 
     # MongoDB settings
     mongodb_url: str = Field(default='mongodb://localhost:27017')
@@ -139,3 +178,4 @@ try:
 except Exception as e:
     logger.error(f"Failed to load configuration: {e}")
     raise
+    predixlab_data: str = "data"
