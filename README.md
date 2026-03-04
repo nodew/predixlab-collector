@@ -180,7 +180,10 @@ class Settings(BaseSettings):
 可选的环境变量配置：
 
 ```bash
-# 覆盖默认配置路径
+# 只需配置数据根目录（可选，默认值为 data）
+PREDIXLAB_DATA=data
+
+# 如需单独覆盖某个路径，可配置对应变量
 US_STOCK_DATA_DIR=custom/path/to/stock/data
 US_NORMALIZED_DATA_DIR=custom/path/to/normalized/data
 
