@@ -52,7 +52,7 @@ class Settings(BaseSettings):
         if not isinstance(data, dict):
             return data
 
-        root = data.get("predixlab_data", "data")
+        root = data.get("predixlab_data", cls.model_fields["predixlab_data"].default)
         default_paths = {
             "calendar_dir": "calendar",
             "us_calendar_path": "calendar/us.txt",
@@ -178,4 +178,3 @@ try:
 except Exception as e:
     logger.error(f"Failed to load configuration: {e}")
     raise
-    predixlab_data: str = "data"
